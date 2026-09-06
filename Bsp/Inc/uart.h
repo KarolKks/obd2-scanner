@@ -3,6 +3,11 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "stm32l4xx.h"
+#include "stm32l4xx_ll_bus.h"
+#include "stm32l4xx_ll_gpio.h"
+#include "stm32l4xx_ll_usart.h"
+#include "stm32l4xx_ll_rcc.h"
 
 /**
  * @brief Status codes for UART operations.
