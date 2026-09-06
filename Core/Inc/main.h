@@ -12,7 +12,7 @@ extern "C" {
 #include "stm32l4xx_ll_utils.h"  
 #include "stm32l4xx_ll_gpio.h"   
 #include "stm32l4xx_ll_spi.h"   
-#include "stm32l4xx_ll_can.h"    
+//#include "stm32l4xx_ll_can.h" // to do for my own    
 
 #ifdef __cplusplus
 }
