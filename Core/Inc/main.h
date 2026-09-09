@@ -6,15 +6,16 @@ extern "C" {
 #endif
 
 #include "stm32l4xx.h"
-#include "stm32l4xx_ll_bus.h"   
-#include "stm32l4xx_ll_rcc.h"   
-#include "stm32l4xx_ll_system.h" 
-#include "stm32l4xx_ll_utils.h"  
-#include "stm32l4xx_ll_gpio.h"   
-#include "stm32l4xx_ll_spi.h"   
-//#include "stm32l4xx_ll_can.h" // to do for my own    
+#include "stm32l4xx_ll_bus.h"
+#include "stm32l4xx_ll_rcc.h"
+#include "stm32l4xx_ll_system.h"
+#include "stm32l4xx_ll_utils.h"
+#include "stm32l4xx_ll_gpio.h"
+#include "stm32l4xx_ll_spi.h"
 
+#include "bsp_clk.h"
 #include "uart.h"
+#include "can.h"
 
 #ifdef __cplusplus
 }
