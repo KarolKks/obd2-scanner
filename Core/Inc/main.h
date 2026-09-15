@@ -13,9 +13,11 @@ extern "C" {
 #include "stm32l4xx_ll_gpio.h"
 #include "stm32l4xx_ll_spi.h"
 
+
 #include "bsp_clk.h"
 #include "uart.h"
 #include "can.h"
+#include <stdio.h>
 
 #ifdef __cplusplus
 }
