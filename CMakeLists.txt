@@ -34,6 +34,8 @@ option(ENABLE_FREERTOS "Include FreeRTOS middleware" OFF)
 # Core sources
 set(SOURCES
     Core/Src/main.c
+    Core/Src/obd2.c
+    Core/Src/obd_multiframe.c
     Core/Src/system_stm32l4xx.c
     Core/Src/startup_stm32l476rgtx.s
 )

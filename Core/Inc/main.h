@@ -17,7 +17,10 @@ extern "C" {
 #include "bsp_clk.h"
 #include "uart.h"
 #include "can.h"
+#include "obd2.h"
+#include "obd_multiframe.h"
 #include <stdio.h>
+#include <string.h>
 
 #ifdef __cplusplus
 }

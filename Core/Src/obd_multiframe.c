@@ -1,4 +1,5 @@
 #include "obd_multiframe.h"
+#include <stddef.h>
 
 void OBD_MF_Reset(OBD_MF_RxContext_t *ctx)
 {
