@@ -1,10 +1,7 @@
 #include "can.h"
 #include <stddef.h>
 
-// Zakładamy, że HAL_GetTick() lub podobny licznik milisekund jest dostępny
-extern uint32_t HAL_GetTick(void); 
-
-#define CAN_TIMEOUT_INIT_MS   100U // Zdefiniowany w milisekundach
+#define CAN_TIMEOUT_LOOPS   100000U
 
 CAN_Status_t CAN_Init(void)
 {
@@ -33,9 +30,9 @@ CAN_Status_t CAN_Init(void)
     CAN1->MCR &= ~CAN_MCR_SLEEP;
     CAN1->MCR |= CAN_MCR_INRQ;
 
-    uint32_t start_tick = HAL_GetTick();
+    uint32_t timeout = CAN_TIMEOUT_LOOPS;
     while ((CAN1->MSR & CAN_MSR_INAK) == 0) {
-        if ((HAL_GetTick() - start_tick) > CAN_TIMEOUT_INIT_MS) {
+        if (--timeout == 0) {
             return CAN_ERR_TIMEOUT;
         }
     }
@@ -52,9 +49,9 @@ CAN_Status_t CAN_Init(void)
     // Exit Initialization mode and enter Normal mode
     CAN1->MCR &= ~CAN_MCR_INRQ;
 
-    start_tick = HAL_GetTick();
+    timeout = CAN_TIMEOUT_LOOPS;
     while ((CAN1->MSR & CAN_MSR_INAK) != 0) {
-        if ((HAL_GetTick() - start_tick) > CAN_TIMEOUT_INIT_MS) {
+        if (--timeout == 0) {
             return CAN_ERR_TIMEOUT;
         }
     }
@@ -105,7 +102,7 @@ CAN_Status_t CAN_Transmit(const CAN_Frame_t *frame, uint32_t timeout_ms)
     uint32_t terr_mask = (CAN_TSR_TERR0 << (mailbox * 8));
     uint32_t alst_mask = (CAN_TSR_ALST0 << (mailbox * 8));
 
-    uint32_t start_time = HAL_GetTick();
+    uint32_t timeout = timeout_ms * 10000U;
 
     // Wait for transmit confirmation
     while ((CAN1->TSR & txok_mask) == 0) {
@@ -116,7 +113,7 @@ CAN_Status_t CAN_Transmit(const CAN_Frame_t *frame, uint32_t timeout_ms)
             return CAN_ERR_HARDWARE;
         }
 
-        if ((HAL_GetTick() - start_time) > timeout_ms) {
+        if (--timeout == 0) {
             CAN1->TSR |= (CAN_TSR_ABRQ0 << (mailbox * 8)); // Abort request
             return CAN_ERR_TIMEOUT;
         }

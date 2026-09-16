@@ -32,7 +32,7 @@ SPI_Status_t SPI_Init(SPI_Handle_t *hspi)
     LL_SPI_SetMode(hspi->instance, LL_SPI_MODE_MASTER);
     LL_SPI_SetStandard(hspi->instance, LL_SPI_PROTOCOL_MOTOROLA);
     LL_SPI_SetDataWidth(hspi->instance, LL_SPI_DATAWIDTH_8BIT);
-    LL_SPI_SetTransferBitOrder(hspi->instance, LL_SPI_BIT_ORDER_MSB_FIRST);
+    LL_SPI_SetTransferBitOrder(hspi->instance, LL_SPI_MSB_FIRST);
     
     // Configure SPI Mode 0 (CPOL=0, CPHA=0)
     LL_SPI_SetClockPolarity(hspi->instance, LL_SPI_POLARITY_LOW);
