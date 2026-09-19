@@ -10,6 +10,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include "can.h" 
 
 /* --- OBD-II Services (Modes) --- */

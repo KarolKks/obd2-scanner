@@ -1,5 +1,4 @@
 #include "obd2.h"
-#include <stddef.h>
 
 void OBD2_BuildRequest(uint8_t service, uint8_t pid, CAN_Frame_t *tx_frame) 
 {

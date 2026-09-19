@@ -1,7 +1,4 @@
 #include "fatfs_sd.h"
-#include "uart.h"
-#include "bsp_clk.h"
-#include "rtc.h"
 
 // External objects
 extern SPI_Handle_t hspi1;
@@ -40,7 +37,7 @@ static void SD_CS_Deselect(void)
 static bool SD_WaitForReady(uint32_t timeout_ms)
 {
     uint8_t res;
-    uint32_t start = BSP_GetTick();
+    uint32_t start = CLK_GetTick();
     
     do {
         if (SPI_ReceiveByte(&hspi1, &res) != SPI_STATUS_OK) {
@@ -50,7 +47,7 @@ static bool SD_WaitForReady(uint32_t timeout_ms)
         if (res == SD_READY_TOKEN) {
             return true;
         }
-    } while ((BSP_GetTick() - start) < timeout_ms);
+    } while ((CLK_GetTick() - start) < timeout_ms);
     
     return false;
 }
@@ -116,7 +113,7 @@ DSTATUS disk_initialize(BYTE pdrv)
     LL_GPIO_SetPinPull(SD_CS_PORT, SD_CS_PIN, LL_GPIO_PULL_UP);
 
     // Allow SD card internal power-on reset (POR) to stabilize (typical 20-50ms)
-    BSP_Delay(50);
+    CLK_Delay(50);
 
     // Start with a slow SPI clock (100 - 400 kHz) for safe initialization
     SPI_SetBaudrate(&hspi1, LL_SPI_BAUDRATEPRESCALER_DIV256);
@@ -153,14 +150,14 @@ DSTATUS disk_initialize(BYTE pdrv)
 
     // Force the card into SPI mode and Idle state (CMD0) with retry
     uint8_t res = 0xFF;
-    uint32_t start = BSP_GetTick();
+    uint32_t start = CLK_GetTick();
     do {
         res = SD_SendCmd(CMD0, 0);
         SD_CS_Deselect();
         if (res == 1) {
             break;
         }
-    } while ((BSP_GetTick() - start) < 1000);
+    } while ((CLK_GetTick() - start) < 1000);
 
     if (res != 1) {
         UART_SendString("  [SD] CMD0 error (received: 0x");
@@ -198,14 +195,14 @@ DSTATUS disk_initialize(BYTE pdrv)
 
     // Poll ACMD41 until the card leaves idle state
     uint32_t acmd41_arg = is_v2 ? (1UL << 30) : 0; // High Capacity Support (HCS) flag for SDv2
-    start = BSP_GetTick();
+    start = CLK_GetTick();
     do {
         res = SD_SendCmd(ACMD41, acmd41_arg);
         SD_CS_Deselect();
         if (res == 0) {
             break;
         }
-    } while ((BSP_GetTick() - start) < 1500);
+    } while ((CLK_GetTick() - start) < 1500);
 
     if (res != 0) {
         UART_SendString("  [SD] ACMD41 timeout (card failed to initialize)\r\n");
@@ -283,10 +280,10 @@ DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count)
 
         // Wait for the data token indicating the start of the payload
         uint8_t token;
-        uint32_t start = BSP_GetTick();
+        uint32_t start = CLK_GetTick();
         do {
             SPI_ReceiveByte(&hspi1, &token);
-        } while (token == 0xFF && (BSP_GetTick() - start) < 500);
+        } while (token == 0xFF && (CLK_GetTick() - start) < 500);
 
         if (token != SD_DATA_TOKEN) {
             SD_CS_Deselect();

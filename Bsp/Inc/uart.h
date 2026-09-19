@@ -8,6 +8,7 @@
 #include "stm32l4xx_ll_gpio.h"
 #include "stm32l4xx_ll_usart.h"
 #include "stm32l4xx_ll_rcc.h"
+#include <stddef.h>
 
 
 /**

@@ -1,5 +1,5 @@
-#ifndef BSP_CAN_H
-#define BSP_CAN_H
+#ifndef CAN_H
+#define CAN_H
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -7,10 +7,7 @@
 #include "stm32l4xx_ll_bus.h"
 #include "stm32l4xx_ll_gpio.h"
 #include "stm32l4xx_ll_rcc.h"
-
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include <stddef.h>
 
 /**
  * @brief Status codes for BSP CAN operations.
@@ -92,8 +89,5 @@ CAN_Status_t CAN_FilterAcceptAll(void);
  */
 CAN_Status_t CAN_FilterOBD2(void);
 
-#ifdef __cplusplus
-}
-#endif
 
-#endif /* BSP_CAN_H */
+#endif /* CAN_H */

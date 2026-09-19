@@ -29,7 +29,7 @@ add_definitions(
 )
 
 # Project build options
-option(ENABLE_FREERTOS "Include FreeRTOS middleware" OFF)
+set(ENABLE_FREERTOS ON CACHE BOOL "Include FreeRTOS middleware" FORCE)
 
 # Core sources
 set(SOURCES

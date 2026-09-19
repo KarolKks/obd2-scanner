@@ -1,5 +1,4 @@
 #include "obd_multiframe.h"
-#include <stddef.h>
 
 void OBD_MF_Reset(OBD_MF_RxContext_t *ctx)
 {
@@ -48,6 +47,10 @@ static void OBD_MF_SendFlowControl(uint32_t response_id)
 
 void OBD_MF_ProcessFrame(OBD_MF_RxContext_t *ctx, const CAN_Frame_t *rx_frame) 
 {
+    if (ctx == NULL || rx_frame == NULL) {
+        return;
+    }
+
     // Extract the upper 4 bits of the first byte to determine ISO-TP frame type
     uint8_t frame_type = rx_frame->data[0] >> 4;
 
@@ -57,6 +60,9 @@ void OBD_MF_ProcessFrame(OBD_MF_RxContext_t *ctx, const CAN_Frame_t *rx_frame)
         {
             // Length is the lower 4 bits of the first byte
             uint8_t len = rx_frame->data[0] & 0x0F;
+            if (len > 7) {
+                len = 7;
+            }
 
             // Copy payload bytes starting from rx_frame->data[1]
             for (uint8_t i = 0; i < len; i++) {
@@ -73,6 +79,12 @@ void OBD_MF_ProcessFrame(OBD_MF_RxContext_t *ctx, const CAN_Frame_t *rx_frame)
         {
             // Total length is lower 4 bits of byte [0] combined with byte [1]
             ctx->total_length = ((rx_frame->data[0] & 0x0F) << 8) | rx_frame->data[1];
+
+            // Protect against buffer overrun
+            if (ctx->total_length > OBD_MF_MAX_PAYLOAD_SIZE) {
+                ctx->state = OBD_MF_STATE_ERROR;
+                break;
+            }
 
             // First Frame always contains 6 payload bytes (indices 2 to 7)
             for (uint8_t i = 0; i < 6; i++) {

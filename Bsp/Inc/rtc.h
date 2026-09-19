@@ -4,6 +4,13 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "stm32l4xx_ll_rcc.h"
+#include "stm32l4xx_ll_pwr.h"
+#include "stm32l4xx_ll_bus.h"
+#include "stm32l4xx_ll_rtc.h"
 
 
 /**

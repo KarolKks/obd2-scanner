@@ -13,17 +13,24 @@ extern "C" {
 #include "stm32l4xx_ll_gpio.h"
 #include "stm32l4xx_ll_spi.h"
 
+#include <stdio.h>
+#include <string.h>
+#include <stdint.h>
+#include <stdbool.h>
 
-#include "bsp_clk.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+
+#include "clk.h"
 #include "uart.h"
 #include "can.h"
 #include "spi.h"
+#include "rtc.h"
 #include "ff.h"
 #include "fatfs_sd.h"
 #include "obd2.h"
 #include "obd_multiframe.h"
-#include <stdio.h>
-#include <string.h>
 
 #ifdef __cplusplus
 }

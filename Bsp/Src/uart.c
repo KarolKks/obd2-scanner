@@ -1,5 +1,4 @@
 #include "uart.h"
-#include <stddef.h>
 
 #define UART_RX_BUFFER_SIZE  128U
 

@@ -1,5 +1,5 @@
-#ifndef BSP_SPI_H
-#define BSP_SPI_H
+#ifndef SPI_H
+#define SPI_H
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -85,4 +85,4 @@ SPI_Status_t SPI_TransmitBuffer(SPI_Handle_t *hspi, const uint8_t *tx_buffer, si
  */
 SPI_Status_t SPI_ReceiveBuffer(SPI_Handle_t *hspi, uint8_t *rx_buffer, size_t length);
 
-#endif /* BSP_SPI_H */
+#endif /* SPI_H */

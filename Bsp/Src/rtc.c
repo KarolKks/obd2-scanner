@@ -1,10 +1,4 @@
 #include "rtc.h"
-#include "stm32l4xx_ll_rcc.h"
-#include "stm32l4xx_ll_pwr.h"
-#include "stm32l4xx_ll_bus.h"
-#include "stm32l4xx_ll_rtc.h"
-#include <stdio.h>
-#include <string.h>
 
 #define RTC_TIMEOUT_LOOPS       1000000U
 #define RTC_CENTURY             2000U

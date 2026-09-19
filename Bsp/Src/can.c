@@ -1,5 +1,4 @@
 #include "can.h"
-#include <stddef.h>
 
 #define CAN_TIMEOUT_LOOPS   100000U
 

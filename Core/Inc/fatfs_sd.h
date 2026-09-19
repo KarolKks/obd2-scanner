@@ -3,7 +3,10 @@
 
 #include "ff.h"
 #include "diskio.h"      /* FatFs lower layer API */
-#include "spi.h"         /* Our robust SPI driver */
+#include "spi.h"         
+#include "clk.h"
+#include "uart.h"
+#include "rtc.h"
 #include "stm32l4xx_ll_gpio.h"
 
 // SD Card Chip Select (CS) Pin Mapping
