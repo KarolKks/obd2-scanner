@@ -17,6 +17,9 @@ extern "C" {
 #include "bsp_clk.h"
 #include "uart.h"
 #include "can.h"
+#include "spi.h"
+#include "ff.h"
+#include "fatfs_sd.h"
 #include "obd2.h"
 #include "obd_multiframe.h"
 #include <stdio.h>

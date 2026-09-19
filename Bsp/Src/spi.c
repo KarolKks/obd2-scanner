@@ -14,7 +14,9 @@ SPI_Status_t SPI_Init(SPI_Handle_t *hspi)
     LL_AHB2_GRP1_EnableClock(LL_AHB2_GRP1_PERIPH_GPIOA);
 
     // Configure GPIOA pins for SPI1 (PA5: SCK, PA6: MISO, PA7: MOSI)
-    LL_GPIO_SetPinMode(GPIOA, LL_GPIO_PIN_5 | LL_GPIO_PIN_6 | LL_GPIO_PIN_7, LL_GPIO_MODE_ALTERNATE);
+    LL_GPIO_SetPinMode(GPIOA, LL_GPIO_PIN_5, LL_GPIO_MODE_ALTERNATE);
+    LL_GPIO_SetPinMode(GPIOA, LL_GPIO_PIN_6, LL_GPIO_MODE_ALTERNATE);
+    LL_GPIO_SetPinMode(GPIOA, LL_GPIO_PIN_7, LL_GPIO_MODE_ALTERNATE);
     
     // Assign alternate function 5 (AF5) to all SPI1 pins
     LL_GPIO_SetAFPin_0_7(GPIOA, LL_GPIO_PIN_5, LL_GPIO_AF_5);
@@ -22,11 +24,18 @@ SPI_Status_t SPI_Init(SPI_Handle_t *hspi)
     LL_GPIO_SetAFPin_0_7(GPIOA, LL_GPIO_PIN_7, LL_GPIO_AF_5);
 
     // Set output speed to very high
-    LL_GPIO_SetPinSpeed(GPIOA, LL_GPIO_PIN_5 | LL_GPIO_PIN_6 | LL_GPIO_PIN_7, LL_GPIO_SPEED_FREQ_VERY_HIGH);
+    LL_GPIO_SetPinSpeed(GPIOA, LL_GPIO_PIN_5, LL_GPIO_SPEED_FREQ_VERY_HIGH);
+    LL_GPIO_SetPinSpeed(GPIOA, LL_GPIO_PIN_6, LL_GPIO_SPEED_FREQ_VERY_HIGH);
+    LL_GPIO_SetPinSpeed(GPIOA, LL_GPIO_PIN_7, LL_GPIO_SPEED_FREQ_VERY_HIGH);
     
-    // Enable pull-up on MISO, no pull on SCK and MOSI
+    // Explicitly configure Push-Pull output on SCK and MOSI
+    LL_GPIO_SetPinOutputType(GPIOA, LL_GPIO_PIN_5, LL_GPIO_OUTPUT_PUSHPULL);
+    LL_GPIO_SetPinOutputType(GPIOA, LL_GPIO_PIN_7, LL_GPIO_OUTPUT_PUSHPULL);
+
+    // Enable pull-up on MISO, pull-up on MOSI, no pull on SCK
+    LL_GPIO_SetPinPull(GPIOA, LL_GPIO_PIN_5, LL_GPIO_PULL_NO);
     LL_GPIO_SetPinPull(GPIOA, LL_GPIO_PIN_6, LL_GPIO_PULL_UP);
-    LL_GPIO_SetPinPull(GPIOA, LL_GPIO_PIN_5 | LL_GPIO_PIN_7, LL_GPIO_PULL_NO);
+    LL_GPIO_SetPinPull(GPIOA, LL_GPIO_PIN_7, LL_GPIO_PULL_UP);
 
     // Configure SPI1 registers
     LL_SPI_SetMode(hspi->instance, LL_SPI_MODE_MASTER);
@@ -49,6 +58,12 @@ SPI_Status_t SPI_Init(SPI_Handle_t *hspi)
 
     // Enable SPI peripheral and update state
     LL_SPI_Enable(hspi->instance);
+
+    // Flush any leftover bytes in RX FIFO
+    while (LL_SPI_IsActiveFlag_RXNE(hspi->instance)) {
+        (void)LL_SPI_ReceiveData8(hspi->instance);
+    }
+
     hspi->is_initialized = true;
 
     return SPI_STATUS_OK;
@@ -77,6 +92,11 @@ SPI_Status_t SPI_SetBaudrate(SPI_Handle_t *hspi, uint32_t baudrate_div)
     
     // Re-enable SPI peripheral
     LL_SPI_Enable(hspi->instance);
+
+    // Flush RX FIFO
+    while (LL_SPI_IsActiveFlag_RXNE(hspi->instance)) {
+        (void)LL_SPI_ReceiveData8(hspi->instance);
+    }
 
     return SPI_STATUS_OK;
 }

@@ -9,9 +9,6 @@
 #include "stm32l4xx_ll_usart.h"
 #include "stm32l4xx_ll_rcc.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /**
  * @brief Status codes for UART operations.
@@ -75,9 +72,5 @@ UART_Status_t UART_ReadChar(char *out_char);
  * @brief Core UART ISR processing function. Handles RXNE, error clearing, and callbacks.
  */
 void UART_IRQHandler(void);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* UART_H */

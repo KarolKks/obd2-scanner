@@ -36,6 +36,7 @@ set(SOURCES
     Core/Src/main.c
     Core/Src/obd2.c
     Core/Src/obd_multiframe.c
+    Core/Src/fatfs_sd.c
     Core/Src/system_stm32l4xx.c
     Core/Src/startup_stm32l476rgtx.s
 )
@@ -85,7 +86,6 @@ list(APPEND SOURCES
 set(FATFS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Middlewares/FatFs")
 list(APPEND SOURCES
     ${FATFS_DIR}/ff.c
-    ${FATFS_DIR}/diskio.c
     ${FATFS_DIR}/ffunicode.c
 )
 
