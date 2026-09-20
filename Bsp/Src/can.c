@@ -1,6 +1,9 @@
 #include "can.h"
 
 #define CAN_TIMEOUT_LOOPS   100000U
+#define CAN_RX_QUEUE_SIZE   16U
+
+static QueueHandle_t s_can_rx_queue = NULL;
 
 CAN_Status_t CAN_Init(void)
 {
@@ -60,6 +63,18 @@ CAN_Status_t CAN_Init(void)
     if (filter_status != CAN_OK) {
         return filter_status;
     }
+
+    // Create FreeRTOS receive queue if not already created
+    if (s_can_rx_queue == NULL) {
+        s_can_rx_queue = xQueueCreate(CAN_RX_QUEUE_SIZE, sizeof(CAN_Frame_t));
+    }
+
+    // Enable FIFO 0 message pending interrupt (FMPIE0)
+    CAN1->IER |= CAN_IER_FMPIE0;
+
+    // Configure NVIC priority 6 for CAN1_RX0_IRQn (safe for FreeRTOS MAX_SYSCALL = 5)
+    NVIC_SetPriority(CAN1_RX0_IRQn, 6);
+    NVIC_EnableIRQ(CAN1_RX0_IRQn);
 
     return CAN_OK;
 }
@@ -124,51 +139,76 @@ CAN_Status_t CAN_Transmit(const CAN_Frame_t *frame, uint32_t timeout_ms)
     return CAN_OK;
 }
 
-CAN_Status_t CAN_Receive(CAN_Frame_t *frame)
+/**
+ * @brief CAN1 RX0 interrupt handler for FIFO 0.
+ *        Pulls received frames from hardware mailboxes and enqueues them into s_can_rx_queue.
+ */
+void CAN1_RX0_IRQHandler(void)
 {
-    if (frame == NULL) return CAN_ERR_NULL_PTR;
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
     // Check if FIFO Overrun occurred and clear it to unblock receiving
     if (CAN1->RF0R & CAN_RF0R_FOVR0) {
         CAN1->RF0R |= CAN_RF0R_FOVR0;
     }
 
-    if ((CAN1->RF0R & CAN_RF0R_FMP0) == 0) {
-        return CAN_ERR_FIFO_EMPTY;
-    }
+    // Drain hardware FIFO 0 (can hold up to 3 frames)
+    while ((CAN1->RF0R & CAN_RF0R_FMP0) != 0) {
+        CAN_Frame_t frame;
+        uint32_t rir = CAN1->sFIFOMailBox[0].RIR;
+        if ((rir & CAN_RI0R_IDE) != 0) {
+            frame.is_extended = true;
+            frame.id = (rir >> CAN_RI0R_EXID_Pos);
+        } else {
+            frame.is_extended = false;
+            frame.id = ((rir >> CAN_RI0R_STID_Pos) & 0x7FFU);
+        }
 
-    uint32_t rir = CAN1->sFIFOMailBox[0].RIR;
-    if ((rir & CAN_RI0R_IDE) != 0) {
-        frame->is_extended = true;
-        frame->id = (rir >> CAN_RI0R_EXID_Pos);
-    } else {
-        frame->is_extended = false;
-        frame->id = ((rir >> CAN_RI0R_STID_Pos) & 0x7FFU);
-    }
+        frame.is_rtr = ((rir & CAN_RI0R_RTR) != 0);
+        frame.dlc = (uint8_t)(CAN1->sFIFOMailBox[0].RDTR & CAN_RDT0R_DLC);
 
-    frame->is_rtr = ((rir & CAN_RI0R_RTR) != 0);
-    frame->dlc = (uint8_t)(CAN1->sFIFOMailBox[0].RDTR & CAN_RDT0R_DLC);
+        if (!frame.is_rtr) {
+            uint32_t rdlr = CAN1->sFIFOMailBox[0].RDLR;
+            uint32_t rdhr = CAN1->sFIFOMailBox[0].RDHR;
+            for (uint8_t i = 0; i < frame.dlc; i++) {
+                if (i < 4) frame.data[i] = (uint8_t)(rdlr >> (i * 8));
+                else       frame.data[i] = (uint8_t)(rdhr >> ((i - 4) * 8));
+            }
+        }
 
-    // Copy payload only if it's a data frame
-    if (!frame->is_rtr) {
-        uint32_t rdlr = CAN1->sFIFOMailBox[0].RDLR;
-        uint32_t rdhr = CAN1->sFIFOMailBox[0].RDHR;
-        
-        for (uint8_t i = 0; i < frame->dlc; i++) {
-            if (i < 4) frame->data[i] = (uint8_t)(rdlr >> (i * 8));
-            else       frame->data[i] = (uint8_t)(rdhr >> ((i - 4) * 8));
+        // Release hardware FIFO 0 mailbox
+        CAN1->RF0R |= CAN_RF0R_RFOM0;
+
+        // Push to FreeRTOS queue only if scheduler has started
+        if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED) {
+            if (s_can_rx_queue != NULL) {
+                xQueueSendFromISR(s_can_rx_queue, &frame, &xHigherPriorityTaskWoken);
+            }
         }
     }
 
-    // Release FIFO 0 output mailbox
-    CAN1->RF0R |= CAN_RF0R_RFOM0;
+    if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED) {
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    }
+}
 
-    return CAN_OK;
+CAN_Status_t CAN_Receive(CAN_Frame_t *frame, uint32_t timeout_ms)
+{
+    if (frame == NULL) return CAN_ERR_NULL_PTR;
+    if (s_can_rx_queue == NULL) return CAN_ERR_FIFO_EMPTY;
+
+    TickType_t ticks = (timeout_ms == 0) ? 0 : pdMS_TO_TICKS(timeout_ms);
+    if (xQueueReceive(s_can_rx_queue, frame, ticks) == pdPASS) {
+        return CAN_OK;
+    }
+
+    return CAN_ERR_TIMEOUT;
 }
 
 bool CAN_IsRxPending(void)
 {
-    return (CAN1->RF0R & CAN_RF0R_FMP0) != 0;
+    if (s_can_rx_queue == NULL) return false;
+    return (uxQueueMessagesWaiting(s_can_rx_queue) > 0);
 }
 
 CAN_Status_t CAN_FilterAcceptAll(void)
@@ -197,4 +237,11 @@ CAN_Status_t CAN_FilterOBD2(void)
     CAN1->FA1R |= CAN_FA1R_FACT0;
     CAN1->FMR &= ~CAN_FMR_FINIT;
     return CAN_OK;
+}
+
+void CAN_FlushRxQueue(void)
+{
+    if (s_can_rx_queue != NULL) {
+        xQueueReset(s_can_rx_queue);
+    }
 }

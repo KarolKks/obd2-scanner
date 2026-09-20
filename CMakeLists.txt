@@ -36,10 +36,16 @@ set(SOURCES
     Core/Src/main.c
     Core/Src/obd2.c
     Core/Src/obd_multiframe.c
-    Core/Src/fatfs_sd.c
+    Core/Src/logger.c
     Core/Src/system_stm32l4xx.c
     Core/Src/startup_stm32l476rgtx.s
 )
+
+# Tasks sources
+file(GLOB_RECURSE TASK_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/Tasks/Src/*.c"
+)
+list(APPEND SOURCES ${TASK_SOURCES})
 
 # BSP sources
 file(GLOB_RECURSE BSP_SOURCES CONFIGURE_DEPENDS
@@ -110,6 +116,7 @@ endif()
 set(INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Inc
     ${CMAKE_CURRENT_SOURCE_DIR}/Bsp/Inc
+    ${CMAKE_CURRENT_SOURCE_DIR}/Tasks/Inc
     ${CMAKE_CURRENT_SOURCE_DIR}/Components
     ${CMAKE_CURRENT_SOURCE_DIR}/Config
     ${CMAKE_CURRENT_SOURCE_DIR}/Drivers/CMSIS/Include

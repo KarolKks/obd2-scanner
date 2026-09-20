@@ -7,11 +7,6 @@
 #include "clk.h"
 #include "uart.h"
 #include "rtc.h"
-#include "stm32l4xx_ll_gpio.h"
-
-// SD Card Chip Select (CS) Pin Mapping
-#define SD_CS_PORT  GPIOA
-#define SD_CS_PIN   LL_GPIO_PIN_4
 
 /**
  * @brief  Initializes the SD card via SPI.

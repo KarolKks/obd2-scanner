@@ -68,6 +68,30 @@ UART_Status_t UART_SendString(const char* str)
     return UART_OK;
 }
 
+UART_Status_t UART_SendNumber(uint32_t num)
+{
+    char buf[11];
+    int i = 0;
+
+    if (num == 0) {
+        return UART_SendString("0");
+    }
+
+    while (num > 0) {
+        buf[i++] = (char)('0' + (num % 10));
+        num /= 10;
+    }
+
+    char rev[11];
+    int j = 0;
+    while (i > 0) {
+        rev[j++] = buf[--i];
+    }
+    rev[j] = '\0';
+
+    return UART_SendString(rev);
+}
+
 UART_Status_t UART_RegisterRxCallback(UART_RxCallback_t callback)
 {
     s_rx_callback = callback;

@@ -150,3 +150,118 @@ uint8_t OBD2_ParseDTCs(const uint8_t *payload_buffer, uint16_t payload_length, u
 
     return count; // Returns the total number of decoded DTCs
 }
+
+void OBD2_FormatDTC(uint16_t dtc, char *out_str)
+{
+    if (out_str == NULL) return;
+
+    const char hex_chars[] = "0123456789ABCDEF";
+    out_str[0] = 'P';
+    out_str[1] = hex_chars[(dtc >> 12) & 0x0F];
+    out_str[2] = hex_chars[(dtc >> 8) & 0x0F];
+    out_str[3] = hex_chars[(dtc >> 4) & 0x0F];
+    out_str[4] = hex_chars[dtc & 0x0F];
+    out_str[5] = '\0';
+}
+
+bool OBD2_QuerySensor(uint8_t pid, float *out_val)
+{
+    if (out_val == NULL) return false;
+
+    CAN_Frame_t tx_frame;
+    CAN_Frame_t rx_frame;
+
+    CAN_FlushRxQueue();
+    OBD2_BuildRequest(OBD2_SERVICE_01_LIVE_DATA, pid, &tx_frame);
+    if (CAN_Transmit(&tx_frame, 50) != CAN_OK) {
+        return false;
+    }
+
+    TickType_t start = xTaskGetTickCount();
+    while ((xTaskGetTickCount() - start) < pdMS_TO_TICKS(50)) {
+        if (CAN_Receive(&rx_frame, 50) == CAN_OK) {
+            if (OBD2_IsResponseValid(&rx_frame, OBD2_SERVICE_01_LIVE_DATA, pid)) {
+                *out_val = OBD2_ParseSensorValue(&rx_frame);
+                return true;
+            }
+        } else {
+            break;
+        }
+    }
+
+    return false;
+}
+
+bool OBD2_QueryVIN(char *out_vin, uint32_t timeout_ms)
+{
+    if (out_vin == NULL) return false;
+
+    CAN_Frame_t tx_frame;
+    CAN_Frame_t rx_frame;
+    OBD_MF_RxContext_t iso_tp_ctx;
+
+    CAN_FlushRxQueue();
+    OBD_MF_Reset(&iso_tp_ctx);
+    OBD2_BuildRequest(OBD2_SERVICE_09_VEHICLE_INFO, 0x02, &tx_frame);
+    if (CAN_Transmit(&tx_frame, 50) != CAN_OK) {
+        return false;
+    }
+
+    TickType_t start_time = xTaskGetTickCount();
+    while ((xTaskGetTickCount() - start_time) < pdMS_TO_TICKS(timeout_ms)) {
+        if (CAN_Receive(&rx_frame, 100) == CAN_OK) {
+            OBD_MF_ProcessFrame(&iso_tp_ctx, &rx_frame);
+            if (iso_tp_ctx.state == OBD_MF_STATE_COMPLETE) {
+                memcpy(out_vin, &iso_tp_ctx.buffer[3], 17);
+                out_vin[17] = '\0';
+                return true;
+            } else if (iso_tp_ctx.state == OBD_MF_STATE_ERROR) {
+                return false;
+            }
+        } else {
+            break;
+        }
+    }
+
+    return false;
+}
+
+bool OBD2_QueryDTCs(uint16_t *dtc_list, uint8_t *out_count, uint8_t max_dtcs)
+{
+    if (dtc_list == NULL || out_count == NULL) return false;
+
+    CAN_Frame_t tx_frame;
+    CAN_Frame_t rx_frame;
+    OBD_MF_RxContext_t iso_tp_ctx;
+
+    CAN_FlushRxQueue();
+    OBD_MF_Reset(&iso_tp_ctx);
+    OBD2_BuildRequest(OBD2_SERVICE_03_READ_DTC, 0x00, &tx_frame);
+    if (CAN_Transmit(&tx_frame, 50) != CAN_OK) {
+        return false;
+    }
+
+    TickType_t start_time = xTaskGetTickCount();
+    while ((xTaskGetTickCount() - start_time) < pdMS_TO_TICKS(500)) {
+        if (CAN_Receive(&rx_frame, 100) == CAN_OK) {
+            uint8_t frame_type = rx_frame.data[0] >> 4;
+            if (frame_type == 0) {
+                uint8_t payload_len = rx_frame.data[0] & 0x0F;
+                *out_count = OBD2_ParseDTCs(&rx_frame.data[2], payload_len - 1, dtc_list, max_dtcs);
+                return true;
+            } else {
+                OBD_MF_ProcessFrame(&iso_tp_ctx, &rx_frame);
+                if (iso_tp_ctx.state == OBD_MF_STATE_COMPLETE) {
+                    *out_count = OBD2_ParseDTCs(&iso_tp_ctx.buffer[1], iso_tp_ctx.total_length - 1, dtc_list, max_dtcs);
+                    return true;
+                } else if (iso_tp_ctx.state == OBD_MF_STATE_ERROR) {
+                    return false;
+                }
+            }
+        } else {
+            break;
+        }
+    }
+
+    return false;
+}

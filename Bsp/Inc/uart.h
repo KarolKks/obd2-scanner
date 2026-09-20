@@ -50,6 +50,13 @@ UART_Status_t UART_SendChar(char ch);
 UART_Status_t UART_SendString(const char* str);
 
 /**
+ * @brief Sends an unsigned integer over UART as ASCII text (without sprintf).
+ * @param num Number to send.
+ * @return UART_OK on success.
+ */
+UART_Status_t UART_SendNumber(uint32_t num);
+
+/**
  * @brief Registers an asynchronous callback function called on character reception.
  * @param callback Pointer to the function.
  * @return UART_OK on success.

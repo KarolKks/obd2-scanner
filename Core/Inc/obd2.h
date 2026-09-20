@@ -1,17 +1,16 @@
-/**
- * @file    obd2.h
- * @brief   Application layer for OBD-II vehicle diagnostics.
- * @details Handles the formatting of diagnostic requests and the parsing 
- *          of responses (physical values, bitmasks, and DTCs).
- */
-
 #ifndef CORE_OBD2_H
 #define CORE_OBD2_H
 
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include "can.h" 
+#include <string.h>
+
+#include "FreeRTOS.h"
+#include "task.h"
+
+#include "can.h"
+#include "obd_multiframe.h"
 
 /* --- OBD-II Services (Modes) --- */
 #define OBD2_SERVICE_01_LIVE_DATA       0x01
@@ -88,5 +87,61 @@ void OBD2_BuildClearDTCRequest(CAN_Frame_t *tx_frame);
  * @return The number of DTCs successfully decoded and saved.
  */
 uint8_t OBD2_ParseDTCs(const uint8_t *payload_buffer, uint16_t payload_length, uint16_t *dtc_list, uint8_t max_dtcs);
+
+/**
+ * @brief Formats a 16-bit DTC code into a standard null-terminated string (e.g., "P0420").
+ * @param[in]  dtc     16-bit DTC value.
+ * @param[out] out_str Output buffer of at least 6 bytes (5 chars + null).
+ */
+void OBD2_FormatDTC(uint16_t dtc, char *out_str);
+
+/**
+ * @brief Queries a single Service 01 sensor PID using interrupt-driven CAN reception.
+ * @param[in]  pid     Parameter ID to request.
+ * @param[out] out_val Pointer to store the decoded physical float value.
+ * @return true if valid response received, false on timeout or error.
+ */
+bool OBD2_QuerySensor(uint8_t pid, float *out_val);
+
+/**
+ * @brief Queries Vehicle Identification Number (VIN) via Service 09 ISO-TP.
+ * @param[out] out_vin     Buffer of at least 18 bytes to store the null-terminated VIN.
+ * @param[in]  timeout_ms  Maximum duration in ms to wait for full multi-frame assembly.
+ * @return true if VIN successfully decoded, false otherwise.
+ */
+bool OBD2_QueryVIN(char *out_vin, uint32_t timeout_ms);
+
+/**
+ * @brief Queries Diagnostic Trouble Codes (DTCs) via Service 03.
+ * @param[out] dtc_list  Array to populate with decoded 16-bit DTC codes.
+ * @param[out] out_count Pointer to store number of retrieved DTCs.
+ * @param[in]  max_dtcs  Maximum capacity of dtc_list.
+ * @return true if DTC response was received and parsed, false on error or timeout.
+ */
+bool OBD2_QueryDTCs(uint16_t *dtc_list, uint8_t *out_count, uint8_t max_dtcs);
+
+/**
+ * @brief Consolidated vehicle state model for diagnostics, telemetry, logging, and UI.
+ */
+typedef struct {
+    char     datetime[24];
+    char     vin[18];
+    bool     vin_valid;
+    float    rpm;
+    bool     rpm_valid;
+    float    speed;
+    bool     speed_valid;
+    float    coolant;
+    bool     coolant_valid;
+    float    load;
+    bool     load_valid;
+    float    throttle;
+    bool     throttle_valid;
+    float    maf;
+    bool     maf_valid;
+    uint16_t dtc_codes[6];
+    uint8_t  dtc_count;
+    bool     dtc_valid;
+} VehicleData_t;
 
 #endif /* CORE_OBD2_H */

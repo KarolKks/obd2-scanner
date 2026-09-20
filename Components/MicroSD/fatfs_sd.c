@@ -22,12 +22,12 @@ static uint8_t CardType = 0; /* 0 = Standard Capacity (SDSC), 1 = High Capacity 
 /* CS Control Helpers */
 static void SD_CS_Select(void)
 {
-    LL_GPIO_ResetOutputPin(SD_CS_PORT, SD_CS_PIN);
+    SPI_SD_CS_Select();
 }
 
 static void SD_CS_Deselect(void)
 {
-    LL_GPIO_SetOutputPin(SD_CS_PORT, SD_CS_PIN);
+    SPI_SD_CS_Deselect();
     
     // Send a dummy clock cycle to force the SD card to release the MISO line (High-Z state)
     uint8_t dummy;
@@ -102,15 +102,8 @@ DSTATUS disk_initialize(BYTE pdrv)
         return STA_NOINIT;
     }
 
-    // Ensure GPIOA clock is enabled for Chip Select pin
-    LL_AHB2_GRP1_EnableClock(LL_AHB2_GRP1_PERIPH_GPIOA);
-
-    // Initialize CS pin as Output Push-Pull, High Speed, Pull-Up, set HIGH (Deselected)
-    LL_GPIO_SetOutputPin(SD_CS_PORT, SD_CS_PIN);
-    LL_GPIO_SetPinMode(SD_CS_PORT, SD_CS_PIN, LL_GPIO_MODE_OUTPUT);
-    LL_GPIO_SetPinOutputType(SD_CS_PORT, SD_CS_PIN, LL_GPIO_OUTPUT_PUSHPULL);
-    LL_GPIO_SetPinSpeed(SD_CS_PORT, SD_CS_PIN, LL_GPIO_SPEED_FREQ_VERY_HIGH);
-    LL_GPIO_SetPinPull(SD_CS_PORT, SD_CS_PIN, LL_GPIO_PULL_UP);
+    // Initialize SD Card Chip Select (CS) pin via BSP SPI driver
+    SPI_SD_CS_Init();
 
     // Allow SD card internal power-on reset (POR) to stabilize (typical 20-50ms)
     CLK_Delay(50);
@@ -124,16 +117,6 @@ DSTATUS disk_initialize(BYTE pdrv)
     uint8_t dummy = 0xFF;
     for (uint8_t i = 0; i < 10; i++) {
         SPI_ReceiveByte(&hspi1, &dummy);
-    }
-
-    // Diagnostic: Check physical electrical level on PA6 (MISO)
-    uint32_t pa6_is_high = LL_GPIO_IsInputPinSet(GPIOA, LL_GPIO_PIN_6);
-
-    UART_SendString("  [DIAG] PA6 Pin electrical state: ");
-    if (pa6_is_high) {
-        UART_SendString("HIGH (3.3V - Pull-up OK)\r\n");
-    } else {
-        UART_SendString("LOW (0V - Pin is physically connected to GND!)\r\n");
     }
 
     // Verify MISO line idle level with CS high (should be 0xFF with pull-up)
@@ -305,7 +288,6 @@ DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count)
     SD_CS_Deselect();
     return RES_OK;
 }
-
 
 #if FF_FS_READONLY == 0
 DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count)

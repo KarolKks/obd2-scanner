@@ -3,11 +3,15 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include "stm32l4xx.h"
 #include "stm32l4xx_ll_bus.h"
 #include "stm32l4xx_ll_gpio.h"
 #include "stm32l4xx_ll_rcc.h"
-#include <stddef.h>
+
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
 
 /**
  * @brief Status codes for BSP CAN operations.
@@ -58,18 +62,19 @@ CAN_Status_t CAN_Init(void);
 CAN_Status_t CAN_Transmit(const CAN_Frame_t *frame, uint32_t timeout_ms);
 
 /**
- * @brief  Checks if a frame is available and reads it from FIFO 0.
+ * @brief  Receives a CAN frame from the RTOS receive queue.
  * 
- * @param[out] frame Pointer to the structure where the received frame will be copied.
+ * @param[out] frame      Pointer to the structure where the received frame will be copied.
+ * @param[in]  timeout_ms Maximum time to wait for a frame in milliseconds (0 for non-blocking).
  * 
  * @return CAN_OK on success.
  * @return CAN_ERR_NULL_PTR if the frame pointer is NULL.
- * @return CAN_ERR_FIFO_EMPTY if there are no pending messages in the FIFO.
+ * @return CAN_ERR_TIMEOUT if no frame arrived within the timeout period.
  */
-CAN_Status_t CAN_Receive(CAN_Frame_t *frame);
+CAN_Status_t CAN_Receive(CAN_Frame_t *frame, uint32_t timeout_ms);
 
 /**
- * @brief  Checks whether at least one message is pending in RX FIFO 0.
+ * @brief  Checks whether at least one message is pending in the RX queue.
  * 
  * @return true if at least one message is pending, false otherwise.
  */
@@ -88,6 +93,13 @@ CAN_Status_t CAN_FilterAcceptAll(void);
  * @return CAN_OK on success.
  */
 CAN_Status_t CAN_FilterOBD2(void);
+ 
+ /**
+  * @brief  Flushes all pending messages from the FreeRTOS CAN RX queue.
+  * @note   Useful before initiating a new request/response cycle to discard stale frames.
+  * @return None.
+  */
+void CAN_FlushRxQueue(void);
 
 
 #endif /* CAN_H */

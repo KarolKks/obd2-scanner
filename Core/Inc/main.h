@@ -1,9 +1,6 @@
 #ifndef __MAIN_H
 #define __MAIN_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 #include "stm32l4xx.h"
 #include "stm32l4xx_ll_bus.h"
@@ -31,9 +28,13 @@ extern "C" {
 #include "fatfs_sd.h"
 #include "obd2.h"
 #include "obd_multiframe.h"
+#include "logger.h"
+#include "tim.h"
+#include "gpio.h"
+#include "ky040.h"
 
-#ifdef __cplusplus
-}
-#endif
+#include "task_logger.h"
+#include "task_ui.h"
+#include "task_obd2.h"
 
 #endif /* __MAIN_H */
