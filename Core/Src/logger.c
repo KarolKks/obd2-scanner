@@ -1,4 +1,5 @@
 #include "logger.h"
+#include "fatfs_sd.h"
 
 static FATFS s_fs;
 static FIL s_logfile;
@@ -9,6 +10,9 @@ Logger_Status_t Logger_Init(SPI_Handle_t *hspi)
     if (hspi == NULL) {
         return LOGGER_ERR_INIT;
     }
+
+    // Bind SPI bus instance to FatFs SD card driver
+    SD_SPI_AttachBus(hspi);
 
     // Initialize SPI hardware interface if not already done
     if (!hspi->is_initialized) {

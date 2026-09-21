@@ -12,11 +12,18 @@
 #include "can.h"
 #include "obd_multiframe.h"
 
-/* --- OBD-II Services (Modes) --- */
+/* --- OBD-II Services (Modes 0x01 to 0x0A) --- */
 #define OBD2_SERVICE_01_LIVE_DATA       0x01
+#define OBD2_SERVICE_02_FREEZE_FRAME    0x02
+#define OBD2_SERVICE_03_STORED_DTC      0x03
 #define OBD2_SERVICE_03_READ_DTC        0x03
 #define OBD2_SERVICE_04_CLEAR_DTC       0x04
+#define OBD2_SERVICE_05_O2_MONITOR      0x05
+#define OBD2_SERVICE_06_ONBOARD_TEST    0x06
+#define OBD2_SERVICE_07_PENDING_DTC     0x07
+#define OBD2_SERVICE_08_CTRL_OPERATION  0x08
 #define OBD2_SERVICE_09_VEHICLE_INFO    0x09
+#define OBD2_SERVICE_0A_PERMANENT_DTC   0x0A
 
 /* --- OBD-II PIDs (Service 01 & 09) --- */
 #define OBD2_PID_SUPPORTED_PIDS_00      0x00
@@ -29,13 +36,49 @@
 #define OBD2_PID_THROTTLE_POS           0x11
 
 /**
- * @brief Builds a standard OBD-II CAN frame to request a specific PID.
+ * @brief Diagnostic query response status classification.
+ */
+typedef enum {
+    OBD2_RESP_OK = 0,
+    OBD2_RESP_NRC,
+    OBD2_RESP_TIMEOUT
+} OBD2_ResponseStatus_t;
+
+/**
+ * @brief Builds a standard OBD-II CAN frame to request a specific PID (Single Frame).
  * 
  * @param[in]  service   The OBD-II service mode (e.g., 0x01 or 0x09).
  * @param[in]  pid       The specific Parameter ID to request.
  * @param[out] tx_frame  Pointer to the CAN frame structure to be populated.
  */
 void OBD2_BuildRequest(uint8_t service, uint8_t pid, CAN_Frame_t *tx_frame);
+
+/**
+ * @brief Builds a generic ISO-TP Single Frame request for any service mode and payload.
+ * 
+ * @param[in]  service   The OBD-II service mode (0x01 to 0x0A).
+ * @param[in]  payload   Pointer to optional additional parameter bytes (may be NULL if length is 0).
+ * @param[in]  length    Number of parameter bytes in payload (0 to 6).
+ * @param[out] tx_frame  Pointer to the CAN frame structure to be populated.
+ */
+void OBD2_BuildGenericRequest(uint8_t service, const uint8_t *payload, uint8_t length, CAN_Frame_t *tx_frame);
+
+/**
+ * @brief Builds a Service 02 Freeze Frame request for a specific PID and frame number.
+ * 
+ * @param[in]  pid        Parameter ID to request.
+ * @param[in]  frame_num  Freeze frame number (typically 0x00).
+ * @param[out] tx_frame   Pointer to the CAN frame structure to be populated.
+ */
+void OBD2_BuildFreezeFrameRequest(uint8_t pid, uint8_t frame_num, CAN_Frame_t *tx_frame);
+
+/**
+ * @brief Builds a DTC request frame for Service 03 (Stored), 07 (Pending), or 0A (Permanent).
+ * 
+ * @param[in]  service   The DTC service mode (0x03, 0x07, or 0x0A).
+ * @param[out] tx_frame  Pointer to the CAN frame structure to be populated.
+ */
+void OBD2_BuildDTCRequest(uint8_t service, CAN_Frame_t *tx_frame);
 
 /**
  * @brief Checks if the received frame is a valid response to our request.
@@ -50,7 +93,7 @@ bool OBD2_IsResponseValid(const CAN_Frame_t *rx_frame, uint8_t requested_service
 
 /**
  * @brief Parses physical sensor values (RPM, Speed, Temp, etc.) from a valid response.
- * @note  Only applicable for Service 01 physical parameters.
+ * @note  Applicable for Service 01 and Service 02 physical parameters.
  * 
  * @param[in] rx_frame Pointer to the received CAN frame containing the data.
  * 
@@ -104,6 +147,58 @@ void OBD2_FormatDTC(uint16_t dtc, char *out_str);
 bool OBD2_QuerySensor(uint8_t pid, float *out_val);
 
 /**
+ * @brief Queries Service 02 freeze frame sensor value for a given PID and frame number.
+ * @param[in]  pid       Parameter ID to request.
+ * @param[in]  frame_num Freeze frame index (typically 0x00).
+ * @param[out] out_val   Pointer to store decoded physical value.
+ * @return true if valid freeze frame response received, false on error or timeout.
+ */
+bool OBD2_QueryFreezeFrame(uint8_t pid, uint8_t frame_num, float *out_val);
+
+/**
+ * @brief Queries DTCs from a specified DTC service (0x03 Stored, 0x07 Pending, 0x0A Permanent).
+ * @param[in]  service   Diagnostic service mode (0x03, 0x07, or 0x0A).
+ * @param[out] dtc_list  Array to populate with decoded 16-bit DTC codes.
+ * @param[out] out_count Pointer to store number of retrieved DTCs.
+ * @param[in]  max_dtcs  Maximum capacity of dtc_list.
+ * @return true if response was received and parsed, false on error or timeout.
+ */
+bool OBD2_QueryDTCsByService(uint8_t service, uint16_t *dtc_list, uint8_t *out_count, uint8_t max_dtcs);
+
+/**
+ * @brief Queries Stored Diagnostic Trouble Codes via Service 03.
+ * @param[out] dtc_list  Array to populate with decoded 16-bit DTC codes.
+ * @param[out] out_count Pointer to store number of retrieved DTCs.
+ * @param[in]  max_dtcs  Maximum capacity of dtc_list.
+ * @return true if DTC response was received and parsed, false on error or timeout.
+ */
+bool OBD2_QueryDTCs(uint16_t *dtc_list, uint8_t *out_count, uint8_t max_dtcs);
+
+/**
+ * @brief Queries Pending Diagnostic Trouble Codes via Service 07.
+ * @param[out] dtc_list  Array to populate with decoded 16-bit DTC codes.
+ * @param[out] out_count Pointer to store number of retrieved DTCs.
+ * @param[in]  max_dtcs  Maximum capacity of dtc_list.
+ * @return true if DTC response was received and parsed, false on error or timeout.
+ */
+bool OBD2_QueryPendingDTCs(uint16_t *dtc_list, uint8_t *out_count, uint8_t max_dtcs);
+
+/**
+ * @brief Queries Permanent Diagnostic Trouble Codes via Service 0A.
+ * @param[out] dtc_list  Array to populate with decoded 16-bit DTC codes.
+ * @param[out] out_count Pointer to store number of retrieved DTCs.
+ * @param[in]  max_dtcs  Maximum capacity of dtc_list.
+ * @return true if DTC response was received and parsed, false on error or timeout.
+ */
+bool OBD2_QueryPermanentDTCs(uint16_t *dtc_list, uint8_t *out_count, uint8_t max_dtcs);
+
+/**
+ * @brief Requests clearing of all stored DTCs and emission diagnostics via Service 04.
+ * @return true if positive response (0x44) was received from ECU, false otherwise.
+ */
+bool OBD2_ClearDTCs(void);
+
+/**
  * @brief Queries Vehicle Identification Number (VIN) via Service 09 ISO-TP.
  * @param[out] out_vin     Buffer of at least 18 bytes to store the null-terminated VIN.
  * @param[in]  timeout_ms  Maximum duration in ms to wait for full multi-frame assembly.
@@ -112,13 +207,18 @@ bool OBD2_QuerySensor(uint8_t pid, float *out_val);
 bool OBD2_QueryVIN(char *out_vin, uint32_t timeout_ms);
 
 /**
- * @brief Queries Diagnostic Trouble Codes (DTCs) via Service 03.
- * @param[out] dtc_list  Array to populate with decoded 16-bit DTC codes.
- * @param[out] out_count Pointer to store number of retrieved DTCs.
- * @param[in]  max_dtcs  Maximum capacity of dtc_list.
- * @return true if DTC response was received and parsed, false on error or timeout.
+ * @brief Probes any OBD-II service mode and returns status (OK, NRC, or Timeout).
+ * 
+ * @param[in]  service    The service mode to probe (0x01 to 0x0A).
+ * @param[in]  param1     First parameter (PID / OBDMID / TID), or 0 if unused.
+ * @param[in]  param2     Second parameter (e.g. frame number), or 0 if unused.
+ * @param[in]  param_len  Number of parameter bytes (0, 1, or 2).
+ * @param[out] nrc_code   Pointer to store Negative Response Code if status is OBD2_RESP_NRC.
+ * @param[in]  timeout_ms Maximum duration in ms to wait for response.
+ * 
+ * @return OBD2_ResponseStatus_t indicating positive response, negative response, or timeout.
  */
-bool OBD2_QueryDTCs(uint16_t *dtc_list, uint8_t *out_count, uint8_t max_dtcs);
+OBD2_ResponseStatus_t OBD2_ProbeService(uint8_t service, uint8_t param1, uint8_t param2, uint8_t param_len, uint8_t *nrc_code, uint32_t timeout_ms);
 
 /**
  * @brief Consolidated vehicle state model for diagnostics, telemetry, logging, and UI.

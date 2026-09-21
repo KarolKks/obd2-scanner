@@ -46,8 +46,15 @@ UART_Status_t UART_Init(void)
 
 UART_Status_t UART_SendChar(char ch)
 {
+    if (!LL_USART_IsEnabled(USART2)) {
+        return UART_ERR_BUSY;
+    }
+
+    uint32_t timeout = 100000U;
     while (LL_USART_IsActiveFlag_TXE(USART2) == 0) {
-        // Wait until transmit data register is empty
+        if (--timeout == 0) {
+            return UART_ERR_TIMEOUT;
+        }
     }
     LL_USART_TransmitData8(USART2, (uint8_t)ch);
     return UART_OK;
@@ -61,7 +68,10 @@ UART_Status_t UART_SendString(const char* str)
 
     uint32_t i = 0;
     while (str[i] != '\0') {
-        UART_SendChar(str[i]);
+        UART_Status_t status = UART_SendChar(str[i]);
+        if (status != UART_OK) {
+            return status;
+        }
         i++;
     }
 

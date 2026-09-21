@@ -85,25 +85,4 @@ SPI_Status_t SPI_TransmitBuffer(SPI_Handle_t *hspi, const uint8_t *tx_buffer, si
  */
 SPI_Status_t SPI_ReceiveBuffer(SPI_Handle_t *hspi, uint8_t *rx_buffer, size_t length);
 
-/**
- * @brief  Initializes the SD Card Chip Select (CS) hardware pin (PA4) as output push-pull, set HIGH.
- * @param  None.
- * @return None.
- */
-void SPI_SD_CS_Init(void);
-
-/**
- * @brief  Asserts the SD Card Chip Select line (drives PA4 LOW).
- * @param  None.
- * @return None.
- */
-void SPI_SD_CS_Select(void);
-
-/**
- * @brief  Deasserts the SD Card Chip Select line (drives PA4 HIGH).
- * @param  None.
- * @return None.
- */
-void SPI_SD_CS_Deselect(void);
-
 #endif /* SPI_H */

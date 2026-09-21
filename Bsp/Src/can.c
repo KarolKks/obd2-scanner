@@ -100,7 +100,6 @@ CAN_Status_t CAN_Transmit(const CAN_Frame_t *frame, uint32_t timeout_ms)
 
     CAN1->sTxMailBox[mailbox].TDTR = frame->dlc & 0x0FU;
 
-    // Kopiowanie danych (optymalizowane)
     CAN1->sTxMailBox[mailbox].TDLR = ((uint32_t)frame->data[0]) | (((uint32_t)frame->data[1]) << 8) |
                                      (((uint32_t)frame->data[2]) << 16) | (((uint32_t)frame->data[3]) << 24);
 

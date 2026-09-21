@@ -1,7 +1,12 @@
 #include "fatfs_sd.h"
 
-// External objects
-extern SPI_Handle_t hspi1;
+// Hardware SPI bus handle bound via SD_SPI_AttachBus
+static SPI_Handle_t *s_hspi = NULL;
+
+void SD_SPI_AttachBus(SPI_Handle_t *hspi)
+{
+    s_hspi = hspi;
+}
 
 /* SD Card Command Definitions */
 #define CMD0    (0)         /* GO_IDLE_STATE: Software reset */
@@ -22,16 +27,16 @@ static uint8_t CardType = 0; /* 0 = Standard Capacity (SDSC), 1 = High Capacity 
 /* CS Control Helpers */
 static void SD_CS_Select(void)
 {
-    SPI_SD_CS_Select();
+    GPIO_SD_CS_Select();
 }
 
 static void SD_CS_Deselect(void)
 {
-    SPI_SD_CS_Deselect();
+    GPIO_SD_CS_Deselect();
     
     // Send a dummy clock cycle to force the SD card to release the MISO line (High-Z state)
     uint8_t dummy;
-    SPI_ReceiveByte(&hspi1, &dummy); 
+    SPI_ReceiveByte(s_hspi, &dummy); 
 }
 
 static bool SD_WaitForReady(uint32_t timeout_ms)
@@ -40,7 +45,7 @@ static bool SD_WaitForReady(uint32_t timeout_ms)
     uint32_t start = CLK_GetTick();
     
     do {
-        if (SPI_ReceiveByte(&hspi1, &res) != SPI_STATUS_OK) {
+        if (SPI_ReceiveByte(s_hspi, &res) != SPI_STATUS_OK) {
             return false;
         }
         // The card sends 0xFF when it is ready and idle
@@ -75,22 +80,22 @@ static uint8_t SD_SendCmd(uint8_t cmd, uint32_t arg)
     }
 
     // Transmit command structure: Index, 32-bit Argument, CRC
-    SPI_TransferByte(&hspi1, (cmd | 0x40), NULL);
-    SPI_TransferByte(&hspi1, (uint8_t)(arg >> 24), NULL);
-    SPI_TransferByte(&hspi1, (uint8_t)(arg >> 16), NULL);
-    SPI_TransferByte(&hspi1, (uint8_t)(arg >> 8), NULL);
-    SPI_TransferByte(&hspi1, (uint8_t)(arg), NULL);
+    SPI_TransferByte(s_hspi, (cmd | 0x40), NULL);
+    SPI_TransferByte(s_hspi, (uint8_t)(arg >> 24), NULL);
+    SPI_TransferByte(s_hspi, (uint8_t)(arg >> 16), NULL);
+    SPI_TransferByte(s_hspi, (uint8_t)(arg >> 8), NULL);
+    SPI_TransferByte(s_hspi, (uint8_t)(arg), NULL);
 
     // Provide valid CRC for CMD0 and CMD8; default dummy CRC for others
     uint8_t crc = 0x01;
     if (cmd == CMD0) crc = 0x95;
     if (cmd == CMD8) crc = 0x87;
-    SPI_TransferByte(&hspi1, crc, NULL);
+    SPI_TransferByte(s_hspi, crc, NULL);
 
     // Wait for the R1 response (valid responses have the MSB cleared)
     uint8_t attempts = 200;
     do {
-        SPI_ReceiveByte(&hspi1, &res);
+        SPI_ReceiveByte(s_hspi, &res);
     } while ((res & 0x80) && --attempts);
 
     return res;
@@ -98,25 +103,25 @@ static uint8_t SD_SendCmd(uint8_t cmd, uint32_t arg)
 
 DSTATUS disk_initialize(BYTE pdrv)
 {
-    if (pdrv != 0) {
+    if (pdrv != 0 || s_hspi == NULL) {
         return STA_NOINIT;
     }
 
-    // Initialize SD Card Chip Select (CS) pin via BSP SPI driver
-    SPI_SD_CS_Init();
+    // Initialize SD Card Chip Select (CS) pin via BSP GPIO driver
+    GPIO_SD_CS_Init();
 
     // Allow SD card internal power-on reset (POR) to stabilize (typical 20-50ms)
     CLK_Delay(50);
 
     // Start with a slow SPI clock (100 - 400 kHz) for safe initialization
-    SPI_SetBaudrate(&hspi1, LL_SPI_BAUDRATEPRESCALER_DIV256);
+    SPI_SetBaudrate(s_hspi, LL_SPI_BAUDRATEPRESCALER_DIV256);
     
     SD_CS_Deselect();
     
     // Supply minimum 74 dummy clock cycles with CS high to wake up the card into native state
     uint8_t dummy = 0xFF;
     for (uint8_t i = 0; i < 10; i++) {
-        SPI_ReceiveByte(&hspi1, &dummy);
+        SPI_ReceiveByte(s_hspi, &dummy);
     }
 
     // Verify MISO line idle level with CS high (should be 0xFF with pull-up)
@@ -162,7 +167,7 @@ DSTATUS disk_initialize(BYTE pdrv)
     if (res == 1) {
         uint8_t ocr[4];
         for (uint8_t i = 0; i < 4; i++) {
-            SPI_ReceiveByte(&hspi1, &ocr[i]);
+            SPI_ReceiveByte(s_hspi, &ocr[i]);
         }
         SD_CS_Deselect();
         
@@ -199,7 +204,7 @@ DSTATUS disk_initialize(BYTE pdrv)
         if (SD_SendCmd(CMD58, 0) == 0) {
             uint8_t ocr[4];
             for (uint8_t i = 0; i < 4; i++) {
-                SPI_ReceiveByte(&hspi1, &ocr[i]);
+                SPI_ReceiveByte(s_hspi, &ocr[i]);
             }
             SD_CS_Deselect();
 
@@ -229,7 +234,7 @@ DSTATUS disk_initialize(BYTE pdrv)
     }
 
     // Reconfigure SPI to maximum operational speed (20 MHz) upon successful initialization
-    SPI_SetBaudrate(&hspi1, LL_SPI_BAUDRATEPRESCALER_DIV4);
+    SPI_SetBaudrate(s_hspi, LL_SPI_BAUDRATEPRESCALER_DIV4);
     Stat &= ~STA_NOINIT;
 
     return Stat;
@@ -238,7 +243,7 @@ DSTATUS disk_initialize(BYTE pdrv)
 /* FatFs API: Get disk status */
 DSTATUS disk_status(BYTE pdrv)
 {
-    if (pdrv != 0) {
+    if (pdrv != 0 || s_hspi == NULL) {
         return STA_NOINIT;
     }
     return Stat;
@@ -246,7 +251,7 @@ DSTATUS disk_status(BYTE pdrv)
 
 DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count)
 {
-    if (pdrv != 0 || (Stat & STA_NOINIT)) {
+    if (pdrv != 0 || s_hspi == NULL || (Stat & STA_NOINIT)) {
         return RES_NOTRDY;
     }
 
@@ -265,7 +270,7 @@ DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count)
         uint8_t token;
         uint32_t start = CLK_GetTick();
         do {
-            SPI_ReceiveByte(&hspi1, &token);
+            SPI_ReceiveByte(s_hspi, &token);
         } while (token == 0xFF && (CLK_GetTick() - start) < 500);
 
         if (token != SD_DATA_TOKEN) {
@@ -274,13 +279,13 @@ DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count)
         }
 
         // Retrieve exactly 512 bytes of data
-        SPI_ReceiveBuffer(&hspi1, buff, 512);
+        SPI_ReceiveBuffer(s_hspi, buff, 512);
         buff += 512;
 
         // Discard the 2-byte hardware CRC appended by the card
         uint8_t dummy;
-        SPI_ReceiveByte(&hspi1, &dummy);
-        SPI_ReceiveByte(&hspi1, &dummy);
+        SPI_ReceiveByte(s_hspi, &dummy);
+        SPI_ReceiveByte(s_hspi, &dummy);
         
         sector++;
     }
@@ -292,7 +297,7 @@ DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count)
 #if FF_FS_READONLY == 0
 DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count)
 {
-    if (pdrv != 0 || (Stat & STA_NOINIT)) {
+    if (pdrv != 0 || s_hspi == NULL || (Stat & STA_NOINIT)) {
         return RES_NOTRDY;
     }
     
@@ -307,20 +312,20 @@ DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count)
         }
 
         // Pad with a dummy byte, then send the data token to begin the block
-        SPI_TransferByte(&hspi1, 0xFF, NULL);
-        SPI_TransferByte(&hspi1, SD_DATA_TOKEN, NULL);
+        SPI_TransferByte(s_hspi, 0xFF, NULL);
+        SPI_TransferByte(s_hspi, SD_DATA_TOKEN, NULL);
 
         // Transmit the 512-byte payload
-        SPI_TransmitBuffer(&hspi1, buff, 512);
+        SPI_TransmitBuffer(s_hspi, buff, 512);
         buff += 512;
 
         // Pad with a dummy 2-byte CRC
-        SPI_TransferByte(&hspi1, 0xFF, NULL);
-        SPI_TransferByte(&hspi1, 0xFF, NULL);
+        SPI_TransferByte(s_hspi, 0xFF, NULL);
+        SPI_TransferByte(s_hspi, 0xFF, NULL);
 
         // Validate the data response token from the card
         uint8_t response;
-        SPI_ReceiveByte(&hspi1, &response);
+        SPI_ReceiveByte(s_hspi, &response);
         if ((response & 0x1F) != 0x05) {
             SD_CS_Deselect();
             return RES_ERROR;
@@ -343,7 +348,7 @@ DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count)
 DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void *buff)
 {
     (void)buff;
-    if (pdrv != 0 || (Stat & STA_NOINIT)) {
+    if (pdrv != 0 || s_hspi == NULL || (Stat & STA_NOINIT)) {
         return RES_NOTRDY;
     }
 

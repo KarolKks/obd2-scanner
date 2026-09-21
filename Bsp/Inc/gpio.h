@@ -32,5 +32,25 @@ GPIO_Status_t GPIO_Init(void);
  */
 bool GPIO_Button_IsPressed(void);
 
+/**
+ * @brief  Initializes the SD Card Chip Select (CS) pin (PA4) as output push-pull, default HIGH (Deselected).
+ * @param  None.
+ * @return None.
+ */
+void GPIO_SD_CS_Init(void);
+
+/**
+ * @brief  Asserts the SD Card Chip Select line (drives PA4 LOW).
+ * @param  None.
+ * @return None.
+ */
+void GPIO_SD_CS_Select(void);
+
+/**
+ * @brief  Deasserts the SD Card Chip Select line (drives PA4 HIGH).
+ * @param  None.
+ * @return None.
+ */
+void GPIO_SD_CS_Deselect(void);
 
 #endif /* GPIO_H */

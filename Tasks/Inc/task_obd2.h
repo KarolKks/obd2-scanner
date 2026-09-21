@@ -3,6 +3,9 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <string.h>
+#include <stdio.h>
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -12,6 +15,13 @@
 #include "task_ui.h"
 #include "rtc.h"
 #include "clk.h"
+#include "uart.h"
+
+/**
+ * @brief  Performs a diagnostic probe across all OBD-II standard services (0x01 to 0x0A)
+ *         and outputs a status summary table over UART.
+ */
+void Task_OBD2_RunServicesScan(void);
 
 /**
  * @brief  Creates the FreeRTOS high-priority OBD-II diagnostic acquisition task.

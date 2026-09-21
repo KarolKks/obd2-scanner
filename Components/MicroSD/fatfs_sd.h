@@ -4,9 +4,16 @@
 #include "ff.h"
 #include "diskio.h"      /* FatFs lower layer API */
 #include "spi.h"         
+#include "gpio.h"
 #include "clk.h"
 #include "uart.h"
 #include "rtc.h"
+
+/**
+ * @brief  Binds the hardware SPI handle to the FatFs SD driver.
+ * @param  hspi Pointer to initialized SPI handle.
+ */
+void SD_SPI_AttachBus(SPI_Handle_t *hspi);
 
 /**
  * @brief  Initializes the SD card via SPI.
