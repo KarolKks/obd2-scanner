@@ -1,9 +1,11 @@
 #include "task_obd2.h"
 
+// Core OBD-II diagnostic polling task configuration
 #define OBD2_TASK_STACK_SIZE    768U
 #define OBD2_TASK_PRIORITY      (tskIDLE_PRIORITY + 3)
 #define OBD2_SWEEP_INTERVAL_MS  500U
 
+// Formats a byte as two hexadecimal ASCII characters
 static void Task_OBD2_PrintHexByte(uint8_t val)
 {
     const char hex_chars[] = "0123456789ABCDEF";
@@ -11,6 +13,7 @@ static void Task_OBD2_PrintHexByte(uint8_t val)
     UART_SendChar(hex_chars[val & 0x0F]);
 }
 
+// Formats and prints a single diagnostic service scan result row to UART
 static void Task_OBD2_PrintServiceRow(uint8_t service, const char *name, OBD2_ResponseStatus_t status, uint8_t nrc, const char *extra_info)
 {
     UART_SendString(" [0x");
@@ -18,6 +21,7 @@ static void Task_OBD2_PrintServiceRow(uint8_t service, const char *name, OBD2_Re
     UART_SendString("] ");
     UART_SendString(name);
 
+    // Align column output to 24 characters
     size_t len = strlen(name);
     for (size_t i = len; i < 24; i++) {
         UART_SendChar(' ');
@@ -40,10 +44,13 @@ static void Task_OBD2_PrintServiceRow(uint8_t service, const char *name, OBD2_Re
     UART_SendString("\r\n");
 }
 
+// Executes startup diagnostics across Modes 01-0A to discover ECU capabilities
 void Task_OBD2_RunServicesScan(void)
 {
-
     UART_SendString("         OBD-II SERVICES SCAN (MODE 0x01 - 0x0A)      \r\n");
+
+    // Dynamic PID discovery queries Mode 01 PID 0x00, 0x20, 0x40 bitmasks
+    OBD2_DiscoverSupportedPIDs(150);
 
     uint8_t nrc = 0;
     OBD2_ResponseStatus_t status;
@@ -111,7 +118,26 @@ void Task_OBD2_RunServicesScan(void)
         Task_OBD2_PrintServiceRow(OBD2_SERVICE_0A_PERMANENT_DTC, "Permanent DTCs", status, nrc, NULL);
     }
 
-    UART_SendString("======================================================\r\n\r\n");
+    // List all queryable/supported PIDs discovered from ECU bitmasks (Mode 01)
+    UART_SendString("\r\n--- [SUPPORTED PIDs (SERVICE 01)] ---\r\n");
+    uint8_t supported_pids = 0;
+    for (uint8_t i = 0; i < OBD2_SUPPORTED_PID_COUNT; i++) {
+        const OBD2_PIDDescriptor_t *desc = OBD2_GetDescriptorByIndex(i);
+        if (desc != NULL && OBD2_IsPIDQueryable(desc->pid)) {
+            char pbuf[80];
+            snprintf(pbuf, sizeof(pbuf), "  -> [0x%02X] %-5s: %s (%s)\r\n",
+                     desc->pid, desc->short_name, desc->full_name, desc->unit);
+            UART_SendString(pbuf);
+            supported_pids++;
+        }
+    }
+    if (supported_pids == 0) {
+        UART_SendString("  -> No PIDs responded (ECU silent or bus offline)\r\n");
+    }
+
+    UART_SendString("======================================================\r\n");
+    UART_SendString("[SYSTEM] Initialization complete. UI on OLED, logs on SD.\r\n");
+    UART_SendString("[SYSTEM] UART set to ERROR-ONLY logging mode.\r\n\r\n");
 }
 
 static void Task_OBD2_Body(void *argument)
@@ -123,6 +149,7 @@ static void Task_OBD2_Body(void *argument)
 
     uint32_t cycle_counter = 0;
     TickType_t xLastWakeTime = xTaskGetTickCount();
+    TickType_t last_sd_log_time = 0;
 
     // Initial VIN query attempt on startup
     if (OBD2_QueryVIN(vdata.vin, 600)) {
@@ -137,86 +164,145 @@ static void Task_OBD2_Body(void *argument)
 
     while (1)
     {
-        // Timestamp from RTC or monotonic clock
+        // Timestamp from RTC or monotonic clock fallback
         if (RTC_GetDateTimeString(vdata.datetime, sizeof(vdata.datetime)) != RTC_OK) {
             snprintf(vdata.datetime, sizeof(vdata.datetime), "%lu", (unsigned long)CLK_GetTick());
         }
 
-        // Retry VIN if not resolved yet (every 20 cycles)
+        // Retry VIN resolution every 20 cycles (10s) until successfully read
         if (!vdata.vin_valid && (cycle_counter % 20) == 0) {
             if (OBD2_QueryVIN(vdata.vin, 500)) {
                 vdata.vin_valid = true;
-                Task_Logger_EnqueueString(vdata.datetime, "VIN", vdata.vin);
             }
         }
 
-        // Service 01 Live Sensor Sweeps
-        vdata.rpm_valid = OBD2_QuerySensor(OBD2_PID_ENGINE_RPM, &vdata.rpm);
-        if (vdata.rpm_valid) {
-            Task_Logger_EnqueueNumeric(vdata.datetime, "RPM", (uint32_t)vdata.rpm, "rpm");
-        } else {
-            Task_Logger_EnqueueString(vdata.datetime, "RPM", "NO_RESPONSE");
+        // Service 01: sweep all discovered and queryable sensor PIDs
+        vdata.live_params_count = 0;
+        for (uint8_t i = 0; i < OBD2_SUPPORTED_PID_COUNT; i++) {
+            const OBD2_PIDDescriptor_t *desc = OBD2_GetDescriptorByIndex(i);
+            if (desc == NULL) continue;
+
+            // Skip PIDs reported as unsupported by ECU bitmasks
+            if (!OBD2_IsPIDQueryable(desc->pid)) continue;
+
+            float val = 0.0f;
+            bool ok = OBD2_QuerySensor(desc->pid, &val);
+
+            if (vdata.live_params_count < OBD2_MAX_ACTIVE_PIDS) {
+                vdata.live_params[vdata.live_params_count].pid = desc->pid;
+                vdata.live_params[vdata.live_params_count].value = val;
+                vdata.live_params[vdata.live_params_count].valid = ok;
+                vdata.live_params_count++;
+            }
         }
 
-        vdata.speed_valid = OBD2_QuerySensor(OBD2_PID_VEHICLE_SPEED, &vdata.speed);
-        if (vdata.speed_valid) {
-            Task_Logger_EnqueueNumeric(vdata.datetime, "SPEED", (uint32_t)vdata.speed, "km/h");
-        } else {
-            Task_Logger_EnqueueString(vdata.datetime, "SPEED", "NO_RESPONSE");
-        }
+        // Periodic SD card logging timer
+        uint16_t log_intv_sec = Task_Logger_GetIntervalSeconds();
+        TickType_t now_tick = xTaskGetTickCount();
 
-        vdata.coolant_valid = OBD2_QuerySensor(OBD2_PID_COOLANT_TEMP, &vdata.coolant);
-        if (vdata.coolant_valid) {
-            Task_Logger_EnqueueNumeric(vdata.datetime, "COOLANT", (uint32_t)((int32_t)vdata.coolant), "degC");
+        if (log_intv_sec == 0) {
+            // Logging disabled / paused: keep timer synchronized to current time
+            last_sd_log_time = now_tick;
         } else {
-            Task_Logger_EnqueueString(vdata.datetime, "COOLANT", "NO_RESPONSE");
-        }
+            // Check if user-configured interval has elapsed
+            if ((now_tick - last_sd_log_time) >= pdMS_TO_TICKS(log_intv_sec * 1000U)) {
+                last_sd_log_time = now_tick;
 
-        vdata.load_valid = OBD2_QuerySensor(OBD2_PID_ENGINE_LOAD, &vdata.load);
-        if (vdata.load_valid) {
-            Task_Logger_EnqueueNumeric(vdata.datetime, "LOAD", (uint32_t)vdata.load, "%");
-        } else {
-            Task_Logger_EnqueueString(vdata.datetime, "LOAD", "NO_RESPONSE");
-        }
+                LogSnapshot_t snap;
+                memset(&snap, 0, sizeof(LogSnapshot_t));
 
-        vdata.throttle_valid = OBD2_QuerySensor(OBD2_PID_THROTTLE_POS, &vdata.throttle);
-        if (vdata.throttle_valid) {
-            Task_Logger_EnqueueNumeric(vdata.datetime, "THROTTLE", (uint32_t)vdata.throttle, "%");
-        } else {
-            Task_Logger_EnqueueString(vdata.datetime, "THROTTLE", "NO_RESPONSE");
-        }
-
-        vdata.maf_valid = OBD2_QuerySensor(OBD2_PID_MAF_AIR_FLOW, &vdata.maf);
-        if (vdata.maf_valid) {
-            Task_Logger_EnqueueNumeric(vdata.datetime, "MAF", (uint32_t)vdata.maf, "g/s");
-        } else {
-            Task_Logger_EnqueueString(vdata.datetime, "MAF", "NO_RESPONSE");
-        }
-
-        // Service 03 DTC Check (every 20 cycles)
-        if ((cycle_counter % 20) == 0) {
-            vdata.dtc_valid = OBD2_QueryDTCs(vdata.dtc_codes, &vdata.dtc_count, 6);
-            if (vdata.dtc_valid) {
-                Task_Logger_EnqueueNumeric(vdata.datetime, "DTC_COUNT", vdata.dtc_count, "codes");
-                for (uint8_t i = 0; i < vdata.dtc_count; i++) {
-                    char dtc_buf[8];
-                    OBD2_FormatDTC(vdata.dtc_codes[i], dtc_buf);
-                    Task_Logger_EnqueueString(vdata.datetime, "DTC", dtc_buf);
+                // Capture timestamp for CSV log row
+                RTC_DateTime_t rtc_dt;
+                if (RTC_GetDateTime(&rtc_dt) == RTC_OK) {
+                    snprintf(snap.datetime, sizeof(snap.datetime), "%04u-%02u-%02u %02u:%02u:%02u",
+                             (unsigned int)rtc_dt.year, (unsigned int)rtc_dt.month, (unsigned int)rtc_dt.day,
+                             (unsigned int)rtc_dt.hours, (unsigned int)rtc_dt.minutes, (unsigned int)rtc_dt.seconds);
+                } else {
+                    uint32_t sec = (uint32_t)(now_tick / configTICK_RATE_HZ);
+                    snprintf(snap.datetime, sizeof(snap.datetime), "%02lu:%02lu:%02lu",
+                             (unsigned long)(sec / 3600), (unsigned long)((sec % 3600) / 60), (unsigned long)(sec % 60));
                 }
-            } else {
-                Task_Logger_EnqueueString(vdata.datetime, "DTC", "NO_RESPONSE");
+
+                snap.channel_mask = Task_Logger_GetChannelsMask();
+                snap.param_count = OBD2_SUPPORTED_PID_COUNT;
+
+                // Populate telemetry snapshot parameters according to channel settings
+                for (uint8_t i = 0; i < OBD2_SUPPORTED_PID_COUNT; i++) {
+                    const OBD2_PIDDescriptor_t *desc = OBD2_GetDescriptorByIndex(i);
+                    if (desc != NULL) {
+                        snap.params[i].pid = desc->pid;
+                        strncpy(snap.params[i].short_name, desc->short_name, sizeof(snap.params[i].short_name) - 1);
+                        snap.params[i].decimals = desc->decimals;
+                        snap.params[i].enabled = Task_Logger_IsChannelEnabled(i);
+
+                        bool found = false;
+                        for (uint8_t p = 0; p < vdata.live_params_count; p++) {
+                            if (vdata.live_params[p].pid == desc->pid) {
+                                snap.params[i].value = vdata.live_params[p].value;
+                                snap.params[i].valid = vdata.live_params[p].valid;
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found) {
+                            snap.params[i].value = 0.0f;
+                            snap.params[i].valid = false;
+                        }
+                    }
+                }
+
+                // Send snapshot to background SD card writer queue
+                if (!Task_Logger_EnqueueSnapshot(&snap)) {
+                    UART_SendString("[SD ERROR] Snapshot queue full or logger offline.\r\n");
+                }
             }
         }
 
-        // Send latest vehicle snapshot to Telemetry/UI queue
+        // Handle on-demand Clear DTC (Mode 04) request triggered from UI
+        if (OBD2_GetClearDTCStatus() == 1) {
+            bool clear_ok = OBD2_ClearDTCs();
+            OBD2_SetClearDTCStatus(clear_ok ? 2 : 3);
+            if (clear_ok) {
+                vdata.dtc_count = 0;
+                vdata.pending_count = 0;
+                vdata.permanent_count = 0;
+            }
+        }
+
+        // Periodic diagnostic sweeps (every 10 cycles = 5 seconds)
+        if ((cycle_counter % 10) == 0) {
+            // Service 03: Stored DTCs
+            vdata.dtc_valid = OBD2_QueryDTCs(vdata.dtc_codes, &vdata.dtc_count, 6);
+
+            // Service 07: Pending DTCs
+            vdata.pending_valid = OBD2_QueryPendingDTCs(vdata.pending_codes, &vdata.pending_count, 6);
+
+            // Service 0A: Permanent DTCs
+            vdata.permanent_valid = OBD2_QueryPermanentDTCs(vdata.permanent_codes, &vdata.permanent_count, 6);
+
+            // Service 02: Freeze Frame snapshot parameters
+            vdata.freeze_valid = OBD2_QueryFreezeFrame(OBD2_PID_ENGINE_RPM, 0, &vdata.freeze_rpm);
+            if (vdata.freeze_valid) {
+                OBD2_QueryFreezeFrame(OBD2_PID_VEHICLE_SPEED, 0, &vdata.freeze_speed);
+                OBD2_QueryFreezeFrame(OBD2_PID_COOLANT_TEMP, 0, &vdata.freeze_coolant);
+            }
+        }
+
+        // Update latest vehicle snapshot in UI queue (overwrite single slot)
         QueueHandle_t telem_q = Task_UI_GetTelemetryQueue();
         if (telem_q != NULL) {
             xQueueOverwrite(telem_q, &vdata);
         }
 
+        // Update latest vehicle snapshot in UART task queue for fault detection
+        QueueHandle_t uart_q = Task_UART_GetTelemetryQueue();
+        if (uart_q != NULL) {
+            xQueueOverwrite(uart_q, &vdata);
+        }
+
         cycle_counter++;
 
-        // Periodic cycle: 500 ms sweep interval
+        // Maintain precise periodic execution rate (500 ms sweep interval)
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(OBD2_SWEEP_INTERVAL_MS));
     }
 }

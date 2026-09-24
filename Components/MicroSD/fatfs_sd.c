@@ -2,10 +2,23 @@
 
 // Hardware SPI bus handle bound via SD_SPI_AttachBus
 static SPI_Handle_t *s_hspi = NULL;
+static SD_LogCallback_t s_log_cb = NULL;
 
 void SD_SPI_AttachBus(SPI_Handle_t *hspi)
 {
     s_hspi = hspi;
+}
+
+void SD_RegisterLogCallback(SD_LogCallback_t callback)
+{
+    s_log_cb = callback;
+}
+
+static inline void SD_Log(const char *msg)
+{
+    if (s_log_cb != NULL && msg != NULL) {
+        s_log_cb(msg);
+    }
 }
 
 /* SD Card Command Definitions */
@@ -23,6 +36,11 @@ void SD_SPI_AttachBus(SPI_Handle_t *hspi)
 
 static volatile DSTATUS Stat = STA_NOINIT;
 static uint8_t CardType = 0; /* 0 = Standard Capacity (SDSC), 1 = High Capacity (SDHC/SDXC) */
+
+void SD_CardReset(void)
+{
+    Stat = STA_NOINIT;
+}
 
 /* CS Control Helpers */
 static void SD_CS_Select(void)
@@ -126,14 +144,16 @@ DSTATUS disk_initialize(BYTE pdrv)
 
     // Verify MISO line idle level with CS high (should be 0xFF with pull-up)
     if (dummy != 0xFF) {
-        UART_SendString("  [SD WARNING] MISO (PA6) read 0x");
-        const char hex_chars[] = "0123456789ABCDEF";
-        char hex_str[3];
-        hex_str[0] = hex_chars[(dummy >> 4) & 0x0F];
-        hex_str[1] = hex_chars[dummy & 0x0F];
-        hex_str[2] = '\0';
-        UART_SendString(hex_str);
-        UART_SendString(" with CS HIGH! (Expected 0xFF - MISO is shorted to GND or connected to wrong pin)\r\n");
+        if (s_log_cb != NULL) {
+            const char hex_chars[] = "0123456789ABCDEF";
+            char hex_str[3];
+            hex_str[0] = hex_chars[(dummy >> 4) & 0x0F];
+            hex_str[1] = hex_chars[dummy & 0x0F];
+            hex_str[2] = '\0';
+            SD_Log("  [SD WARNING] MISO (PA6) read 0x");
+            SD_Log(hex_str);
+            SD_Log(" with CS HIGH! (Expected 0xFF - MISO is shorted to GND or connected to wrong pin)\r\n");
+        }
     }
 
     // Force the card into SPI mode and Idle state (CMD0) with retry
@@ -145,21 +165,23 @@ DSTATUS disk_initialize(BYTE pdrv)
         if (res == 1) {
             break;
         }
-    } while ((CLK_GetTick() - start) < 1000);
+    } while ((CLK_GetTick() - start) < 150);
 
     if (res != 1) {
-        UART_SendString("  [SD] CMD0 error (received: 0x");
-        const char hex_chars[] = "0123456789ABCDEF";
-        char hex_str[3];
-        hex_str[0] = hex_chars[(res >> 4) & 0x0F];
-        hex_str[1] = hex_chars[res & 0x0F];
-        hex_str[2] = '\0';
-        UART_SendString(hex_str);
-        UART_SendString(" - 0xFF means no response / card absent / wiring issue)\r\n");
+        if (s_log_cb != NULL) {
+            const char hex_chars[] = "0123456789ABCDEF";
+            char hex_str[3];
+            hex_str[0] = hex_chars[(res >> 4) & 0x0F];
+            hex_str[1] = hex_chars[res & 0x0F];
+            hex_str[2] = '\0';
+            SD_Log("  [SD] CMD0 error (received: 0x");
+            SD_Log(hex_str);
+            SD_Log(" - 0xFF means no response / card absent / wiring issue)\r\n");
+        }
         Stat = STA_NOINIT;
         return Stat;
     }
-    UART_SendString("  [SD] CMD0 OK (Entered SPI Idle state)\r\n");
+    SD_Log("  [SD] CMD0 OK (Entered SPI Idle state)\r\n");
 
     // Verify operating voltage and detect SD version (CMD8)
     bool is_v2 = false;
@@ -174,11 +196,11 @@ DSTATUS disk_initialize(BYTE pdrv)
         // Check if the card accepted the 2.7-3.6V range (0x01) and echoed check pattern (0xAA)
         if (ocr[2] == 0x01 && ocr[3] == 0xAA) {
             is_v2 = true;
-            UART_SendString("  [SD] Card detected: SDv2+\r\n");
+            SD_Log("  [SD] Card detected: SDv2+\r\n");
         }
     } else {
         SD_CS_Deselect();
-        UART_SendString("  [SD] Card detected: SDv1 or MMC (CMD8 rejected)\r\n");
+        SD_Log("  [SD] Card detected: SDv1 or MMC (CMD8 rejected)\r\n");
     }
 
     // Poll ACMD41 until the card leaves idle state
@@ -193,11 +215,11 @@ DSTATUS disk_initialize(BYTE pdrv)
     } while ((CLK_GetTick() - start) < 1500);
 
     if (res != 0) {
-        UART_SendString("  [SD] ACMD41 timeout (card failed to initialize)\r\n");
+        SD_Log("  [SD] ACMD41 timeout (card failed to initialize)\r\n");
         Stat = STA_NOINIT;
         return Stat;
     }
-    UART_SendString("  [SD] ACMD41 Ready\r\n");
+    SD_Log("  [SD] ACMD41 Ready\r\n");
 
     // Determine card capacity (SDSC vs SDHC/SDXC)
     if (is_v2) {
@@ -220,12 +242,12 @@ DSTATUS disk_initialize(BYTE pdrv)
     }
 
     if (CardType == 1) {
-        UART_SendString("  [SD] Capacity: SDHC/SDXC (Block Addressing)\r\n");
+        SD_Log("  [SD] Capacity: SDHC/SDXC (Block Addressing)\r\n");
     } else {
-        UART_SendString("  [SD] Capacity: SDSC (Byte Addressing, e.g. 512MB)\r\n");
+        SD_Log("  [SD] Capacity: SDSC (Byte Addressing, e.g. 512MB)\r\n");
         // For SDSC, force block length to 512 bytes
         if (SD_SendCmd(CMD16, 512) != 0) {
-            UART_SendString("  [SD] CMD16 (SET_BLOCKLEN) failed!\r\n");
+            SD_Log("  [SD] CMD16 (SET_BLOCKLEN) failed!\r\n");
             SD_CS_Deselect();
             Stat = STA_NOINIT;
             return Stat;
@@ -233,8 +255,8 @@ DSTATUS disk_initialize(BYTE pdrv)
         SD_CS_Deselect();
     }
 
-    // Reconfigure SPI to maximum operational speed (20 MHz) upon successful initialization
-    SPI_SetBaudrate(s_hspi, LL_SPI_BAUDRATEPRESCALER_DIV4);
+    // Reconfigure SPI to reliable operational speed (10 MHz) upon successful initialization
+    SPI_SetBaudrate(s_hspi, LL_SPI_BAUDRATEPRESCALER_DIV8);
     Stat &= ~STA_NOINIT;
 
     return Stat;
@@ -254,6 +276,9 @@ DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count)
     if (pdrv != 0 || s_hspi == NULL || (Stat & STA_NOINIT)) {
         return RES_NOTRDY;
     }
+
+    // Ensure operational baudrate for SD card transfers (10 MHz)
+    SPI_SetBaudrate(s_hspi, LL_SPI_BAUDRATEPRESCALER_DIV8);
 
     // SDSC cards use byte addressing; SDHC/SDXC use block addressing
     if (CardType == 0) {
@@ -300,6 +325,9 @@ DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count)
     if (pdrv != 0 || s_hspi == NULL || (Stat & STA_NOINIT)) {
         return RES_NOTRDY;
     }
+
+    // Ensure operational baudrate for SD card transfers (10 MHz)
+    SPI_SetBaudrate(s_hspi, LL_SPI_BAUDRATEPRESCALER_DIV8);
     
     if (CardType == 0) {
         sector *= 512;
@@ -308,6 +336,7 @@ DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count)
     for (UINT i = 0; i < count; i++) {
         if (SD_SendCmd(CMD24, sector) != 0) {
             SD_CS_Deselect();
+            Stat |= STA_NOINIT;
             return RES_ERROR;
         }
 
@@ -328,12 +357,14 @@ DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count)
         SPI_ReceiveByte(s_hspi, &response);
         if ((response & 0x1F) != 0x05) {
             SD_CS_Deselect();
+            Stat |= STA_NOINIT;
             return RES_ERROR;
         }
 
         // Wait for the flash memory programming cycle to finish
         if (!SD_WaitForReady(500)) {
             SD_CS_Deselect();
+            Stat |= STA_NOINIT;
             return RES_ERROR;
         }
         
@@ -352,6 +383,9 @@ DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void *buff)
         return RES_NOTRDY;
     }
 
+    // Ensure operational baudrate for SD card transfers (10 MHz)
+    SPI_SetBaudrate(s_hspi, LL_SPI_BAUDRATEPRESCALER_DIV8);
+
     switch (cmd) {
         case CTRL_SYNC:
             SD_CS_Select();
@@ -360,6 +394,7 @@ DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void *buff)
                 return RES_OK;
             }
             SD_CS_Deselect();
+            Stat |= STA_NOINIT;
             return RES_ERROR;
         default:
             return RES_PARERR;

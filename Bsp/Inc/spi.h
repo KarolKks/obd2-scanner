@@ -9,6 +9,10 @@
 #include "stm32l4xx_ll_gpio.h"
 #include "stm32l4xx_ll_bus.h"
 
+#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
 typedef enum {
     SPI_STATUS_OK = 0,
     SPI_STATUS_ERROR,
@@ -84,5 +88,22 @@ SPI_Status_t SPI_TransmitBuffer(SPI_Handle_t *hspi, const uint8_t *tx_buffer, si
  * @return SPI_STATUS_OK on success, SPI_STATUS_ERROR on NULL pointer or invalid length.
  */
 SPI_Status_t SPI_ReceiveBuffer(SPI_Handle_t *hspi, uint8_t *rx_buffer, size_t length);
+
+/**
+ * @brief  Initializes the FreeRTOS mutex for thread-safe SPI bus sharing.
+ */
+void SPI_InitMutex(void);
+
+/**
+ * @brief  Acquires exclusive lock on the SPI bus.
+ * @param  timeout_ms Timeout in milliseconds to wait for the mutex.
+ * @return true if lock acquired or scheduler not running, false otherwise.
+ */
+bool SPI_Lock(uint32_t timeout_ms);
+
+/**
+ * @brief  Releases exclusive lock on the SPI bus.
+ */
+void SPI_Unlock(void);
 
 #endif /* SPI_H */

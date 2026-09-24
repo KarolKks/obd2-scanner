@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdio.h>
 
 #include "FreeRTOS.h"
 #include "queue.h"
@@ -11,6 +12,9 @@
 #include "obd2.h"
 #include "ky040.h"
 #include "uart.h"
+#include "sh1106.h"
+#include "font.h"
+#include "task_logger.h"
 
 /**
  * @brief  Creates the FreeRTOS UI/Presentation task and its telemetry queue.

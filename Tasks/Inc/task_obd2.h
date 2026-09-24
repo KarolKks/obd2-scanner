@@ -13,6 +13,7 @@
 #include "obd2.h"
 #include "task_logger.h"
 #include "task_ui.h"
+#include "task_uart.h"
 #include "rtc.h"
 #include "clk.h"
 #include "uart.h"

@@ -6,8 +6,19 @@
 #include "spi.h"         
 #include "gpio.h"
 #include "clk.h"
-#include "uart.h"
 #include "rtc.h"
+
+/**
+ * @brief Diagnostic log callback function type for SD driver messages.
+ * @param str Null-terminated string to output.
+ */
+typedef void (*SD_LogCallback_t)(const char *str);
+
+/**
+ * @brief Registers an optional diagnostic logging callback (e.g. UART_SendString, or NULL to disable).
+ * @param callback Function pointer to the logger function.
+ */
+void SD_RegisterLogCallback(SD_LogCallback_t callback);
 
 /**
  * @brief  Binds the hardware SPI handle to the FatFs SD driver.
@@ -57,5 +68,10 @@ DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count);
  * @return DRESULT RES_OK on success, error code otherwise.
  */
 DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void *buff);
+
+/**
+ * @brief  Resets SD driver internal status to STA_NOINIT to allow clean re-initialization.
+ */
+void SD_CardReset(void);
 
 #endif /* FATFS_SD_H */

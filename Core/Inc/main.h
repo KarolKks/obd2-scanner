@@ -32,9 +32,11 @@
 #include "tim.h"
 #include "gpio.h"
 #include "ky040.h"
+#include "sh1106.h"
 
 #include "task_logger.h"
 #include "task_ui.h"
 #include "task_obd2.h"
+#include "task_uart.h"
 
 #endif /* __MAIN_H */

@@ -30,10 +30,49 @@
 #define OBD2_PID_MONITOR_STATUS         0x01
 #define OBD2_PID_ENGINE_LOAD            0x04
 #define OBD2_PID_COOLANT_TEMP           0x05
+#define OBD2_PID_SHORT_FUEL_TRIM_1      0x06
+#define OBD2_PID_LONG_FUEL_TRIM_1       0x07
+#define OBD2_PID_FUEL_PRESSURE          0x0A
+#define OBD2_PID_INTAKE_MAP             0x0B
 #define OBD2_PID_ENGINE_RPM             0x0C
 #define OBD2_PID_VEHICLE_SPEED          0x0D
+#define OBD2_PID_TIMING_ADVANCE         0x0E
+#define OBD2_PID_INTAKE_AIR_TEMP        0x0F
 #define OBD2_PID_MAF_AIR_FLOW           0x10
 #define OBD2_PID_THROTTLE_POS           0x11
+#define OBD2_PID_ENGINE_RUN_TIME        0x1F
+#define OBD2_PID_SUPPORTED_PIDS_20      0x20
+#define OBD2_PID_DISTANCE_WITH_MIL      0x21
+#define OBD2_PID_FUEL_RAIL_PRESSURE     0x23
+#define OBD2_PID_FUEL_LEVEL             0x2F
+#define OBD2_PID_BAROMETRIC_PRESSURE    0x33
+#define OBD2_PID_SUPPORTED_PIDS_40      0x40
+#define OBD2_PID_MODULE_VOLTAGE         0x42
+#define OBD2_PID_AMBIENT_AIR_TEMP       0x46
+#define OBD2_PID_ENGINE_OIL_TEMP        0x5C
+
+#define OBD2_SUPPORTED_PID_COUNT        20U
+#define OBD2_MAX_ACTIVE_PIDS            24U
+
+/**
+ * @brief Descriptor for standard OBD-II Service 01 Parameters.
+ */
+typedef struct {
+    uint8_t     pid;
+    const char *short_name;   /* 4-5 chars for compact OLED rows e.g. "RPM", "SPD" */
+    const char *full_name;    /* Descriptive English/Polish name */
+    const char *unit;         /* Physical unit string */
+    uint8_t     decimals;     /* Number of decimal places: 0 = integer, 1 = 0.1 */
+} OBD2_PIDDescriptor_t;
+
+/**
+ * @brief Dynamic live parameter holding decoded value and validity flag.
+ */
+typedef struct {
+    uint8_t pid;
+    float   value;
+    bool    valid;
+} OBD2_LiveParam_t;
 
 /**
  * @brief Diagnostic query response status classification.
@@ -220,28 +259,88 @@ bool OBD2_QueryVIN(char *out_vin, uint32_t timeout_ms);
  */
 OBD2_ResponseStatus_t OBD2_ProbeService(uint8_t service, uint8_t param1, uint8_t param2, uint8_t param_len, uint8_t *nrc_code, uint32_t timeout_ms);
 
-/**
- * @brief Consolidated vehicle state model for diagnostics, telemetry, logging, and UI.
- */
 typedef struct {
     char     datetime[24];
+    
+    // Service 09: Vehicle Identification
     char     vin[18];
     bool     vin_valid;
-    float    rpm;
-    bool     rpm_valid;
-    float    speed;
-    bool     speed_valid;
-    float    coolant;
-    bool     coolant_valid;
-    float    load;
-    bool     load_valid;
-    float    throttle;
-    bool     throttle_valid;
-    float    maf;
-    bool     maf_valid;
+
+    // Service 03: Stored DTCs
     uint16_t dtc_codes[6];
     uint8_t  dtc_count;
     bool     dtc_valid;
+
+    // Service 07: Pending DTCs
+    uint16_t pending_codes[6];
+    uint8_t  pending_count;
+    bool     pending_valid;
+
+    // Service 0A: Permanent DTCs
+    uint16_t permanent_codes[6];
+    uint8_t  permanent_count;
+    bool     permanent_valid;
+
+    // Service 02: Freeze Frame Status & Data
+    bool     freeze_valid;
+    float    freeze_rpm;
+    float    freeze_speed;
+    float    freeze_coolant;
+
+    // Service 01: Dynamic Live Telemetry Array
+    OBD2_LiveParam_t live_params[OBD2_MAX_ACTIVE_PIDS];
+    uint8_t          live_params_count;
 } VehicleData_t;
+
+/**
+ * @brief Retrieves the PID descriptor for a given PID.
+ * @param pid OBD-II Parameter ID (e.g. 0x0C).
+ * @return Pointer to OBD2_PIDDescriptor_t, or NULL if not in standard list.
+ */
+const OBD2_PIDDescriptor_t *OBD2_GetPIDDescriptor(uint8_t pid);
+
+/**
+ * @brief Retrieves the PID descriptor by its 0-based index in the standard table.
+ * @param index 0 to OBD2_SUPPORTED_PID_COUNT-1.
+ * @return Pointer to OBD2_PIDDescriptor_t, or NULL if out of range.
+ */
+const OBD2_PIDDescriptor_t *OBD2_GetDescriptorByIndex(uint8_t index);
+
+/**
+ * @brief Discovers supported PIDs by querying Mode 01 PID 0x00, 0x20, 0x40 bitmasks.
+ * @param timeout_ms Timeout for each bitmask query.
+ */
+void OBD2_DiscoverSupportedPIDs(uint32_t timeout_ms);
+
+/**
+ * @brief Checks if a given PID is marked as supported by the ECU bitmasks (or core fallback).
+ * @param pid Parameter ID to check.
+ * @return true if queryable, false otherwise.
+ */
+bool OBD2_IsPIDQueryable(uint8_t pid);
+
+/**
+ * @brief  Requests asynchronous execution of Service 04 (Clear DTCs & reset MIL).
+ */
+void OBD2_TriggerClearDTC(void);
+
+/**
+ * @brief  Returns the result/status of the Clear DTCs request.
+ * @return 0 = Idle, 1 = In Progress, 2 = Success (ACK received), 3 = Timeout / Failed.
+ */
+int8_t OBD2_GetClearDTCStatus(void);
+
+/**
+ * @brief  Sets the result/status of the Clear DTC operation (called by Task_OBD2).
+ * @param  status 0 = Idle, 1 = In Progress, 2 = Success, 3 = Timeout / Failed.
+ */
+void OBD2_SetClearDTCStatus(int8_t status);
+
+/**
+ * @brief Returns short human-readable description for common standard SAE DTCs.
+ * @param dtc 16-bit raw DTC value.
+ * @return Null-terminated description string.
+ */
+const char *OBD2_GetDTCDescription(uint16_t dtc);
 
 #endif /* CORE_OBD2_H */

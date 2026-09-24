@@ -28,6 +28,11 @@ void vApplicationMallocFailedHook(void)
     while (1);
 }
 
+static void SD_LogToUART(const char *str)
+{
+    (void)UART_SendString(str);
+}
+
 int main(void)
 {
     // Initialize core system clocks and 1ms SysTick timebase
@@ -55,9 +60,23 @@ int main(void)
     CAN_FilterOBD2();
     UART_SendString("CAN Bus Active (500 kbps, Filter 0x7E8-0x7EF).\r\n");
 
+    // Initialize SPI bus mutex for thread-safe bus sharing between SD card and OLED
+    SPI_InitMutex();
+
+    // Register diagnostic logging callback for SD card driver via Dependency Injection
+    SD_RegisterLogCallback(SD_LogToUART);
+
     // Initialize FatFs SD card filesystem and default logfile
     if (Logger_Init(&hspi1) != LOGGER_OK) {
         UART_SendString("[SD WARNING] Logging offline or card unmounted.\r\n");
+    }
+
+    // Initialize SH1106 1.3" OLED display (SPI1, CS: PB6, DC: PC7, RES: PA9)
+    SH1106_AttachBus(&hspi1);
+    if (SH1106_Init() != SH1106_OK) {
+        UART_SendString("[OLED ERROR] SH1106 Initialization Failed!\r\n");
+    } else {
+        UART_SendString("SH1106 OLED Display Ready (SPI1, PB6/PC7/PA9).\r\n");
     }
 
     // Initialize KY-040 Rotary Encoder (TIM3 PB4/PB5, Button PA10 / D2)
@@ -80,6 +99,11 @@ int main(void)
 
     if (Task_UI_Create() != pdPASS) {
         UART_SendString("[RTOS ERROR] Failed to create Task_UI!\r\n");
+        while (1);
+    }
+
+    if (Task_UART_Create() != pdPASS) {
+        UART_SendString("[RTOS ERROR] Failed to create Task_UART!\r\n");
         while (1);
     }
 

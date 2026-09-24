@@ -4,12 +4,12 @@
 
 SPI_Status_t SPI_Init(SPI_Handle_t *hspi)
 {
-    // Validate pointer and instance
+    // Validate handle pointer and peripheral instance
     if (hspi == NULL || hspi->instance != SPI1) {
         return SPI_STATUS_ERROR;
     }
 
-    // Enable peripheral clocks
+    // Enable SPI1 and GPIOA peripheral clocks
     LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_SPI1);
     LL_AHB2_GRP1_EnableClock(LL_AHB2_GRP1_PERIPH_GPIOA);
 
@@ -18,48 +18,48 @@ SPI_Status_t SPI_Init(SPI_Handle_t *hspi)
     LL_GPIO_SetPinMode(GPIOA, LL_GPIO_PIN_6, LL_GPIO_MODE_ALTERNATE);
     LL_GPIO_SetPinMode(GPIOA, LL_GPIO_PIN_7, LL_GPIO_MODE_ALTERNATE);
     
-    // Assign alternate function 5 (AF5) to all SPI1 pins
+    // Assign Alternate Function AF5 to all SPI1 signals
     LL_GPIO_SetAFPin_0_7(GPIOA, LL_GPIO_PIN_5, LL_GPIO_AF_5);
     LL_GPIO_SetAFPin_0_7(GPIOA, LL_GPIO_PIN_6, LL_GPIO_AF_5);
     LL_GPIO_SetAFPin_0_7(GPIOA, LL_GPIO_PIN_7, LL_GPIO_AF_5);
 
-    // Set output speed to very high
+    // Set high-speed slew rate
     LL_GPIO_SetPinSpeed(GPIOA, LL_GPIO_PIN_5, LL_GPIO_SPEED_FREQ_VERY_HIGH);
     LL_GPIO_SetPinSpeed(GPIOA, LL_GPIO_PIN_6, LL_GPIO_SPEED_FREQ_VERY_HIGH);
     LL_GPIO_SetPinSpeed(GPIOA, LL_GPIO_PIN_7, LL_GPIO_SPEED_FREQ_VERY_HIGH);
     
-    // Explicitly configure Push-Pull output on SCK and MOSI
+    // Explicitly configure Push-Pull output on SCK and MOSI lines
     LL_GPIO_SetPinOutputType(GPIOA, LL_GPIO_PIN_5, LL_GPIO_OUTPUT_PUSHPULL);
     LL_GPIO_SetPinOutputType(GPIOA, LL_GPIO_PIN_7, LL_GPIO_OUTPUT_PUSHPULL);
 
-    // Enable pull-up on MISO, pull-up on MOSI, no pull on SCK
+    // Enable internal pull-ups on MISO and MOSI to prevent floating lines
     LL_GPIO_SetPinPull(GPIOA, LL_GPIO_PIN_5, LL_GPIO_PULL_NO);
     LL_GPIO_SetPinPull(GPIOA, LL_GPIO_PIN_6, LL_GPIO_PULL_UP);
     LL_GPIO_SetPinPull(GPIOA, LL_GPIO_PIN_7, LL_GPIO_PULL_UP);
 
-    // Configure SPI1 registers
+    // Configure SPI1 master mode, 8-bit data width, MSB first
     LL_SPI_SetMode(hspi->instance, LL_SPI_MODE_MASTER);
     LL_SPI_SetStandard(hspi->instance, LL_SPI_PROTOCOL_MOTOROLA);
     LL_SPI_SetDataWidth(hspi->instance, LL_SPI_DATAWIDTH_8BIT);
     LL_SPI_SetTransferBitOrder(hspi->instance, LL_SPI_MSB_FIRST);
     
-    // Configure SPI Mode 0 (CPOL=0, CPHA=0)
+    // Set SPI Mode 0 (CPOL=0, CPHA=0)
     LL_SPI_SetClockPolarity(hspi->instance, LL_SPI_POLARITY_LOW);
     LL_SPI_SetClockPhase(hspi->instance, LL_SPI_PHASE_1EDGE);
     
-    // Set software NSS management
+    // Use software slave select (NSS managed manually via GPIO)
     LL_SPI_SetNSSMode(hspi->instance, LL_SPI_NSS_SOFT);
     
-    // Set baud rate prescaler from the handle
+    // Set initial baud rate prescaler
     LL_SPI_SetBaudRatePrescaler(hspi->instance, hspi->baudrate_div);
     
-    // Set RX FIFO threshold to 8 bits for byte-by-byte reception
+    // Configure RX FIFO threshold to 8 bits for 1-byte granularity
     LL_SPI_SetRxFIFOThreshold(hspi->instance, LL_SPI_RX_FIFO_TH_QUARTER);
 
-    // Enable SPI peripheral and update state
+    // Enable SPI peripheral
     LL_SPI_Enable(hspi->instance);
 
-    // Flush any leftover bytes in RX FIFO
+    // Flush any residual data in RX FIFO
     while (LL_SPI_IsActiveFlag_RXNE(hspi->instance)) {
         (void)LL_SPI_ReceiveData8(hspi->instance);
     }
@@ -71,22 +71,21 @@ SPI_Status_t SPI_Init(SPI_Handle_t *hspi)
 
 SPI_Status_t SPI_SetBaudrate(SPI_Handle_t *hspi, uint32_t baudrate_div)
 {
-    // Validate handle and initialization state
     if (hspi == NULL || !hspi->is_initialized) {
         return SPI_STATUS_ERROR;
     }
 
     uint32_t timeout = SPI_TIMEOUT_LOOPS;
 
-    // Wait until SPI is not busy before disabling it
+    // Wait until SPI bus activity is idle before reconfiguring
     while (LL_SPI_IsActiveFlag_BSY(hspi->instance)) {
         if (--timeout == 0) return SPI_STATUS_TIMEOUT;
     }
 
-    // Disable SPI before changing prescaler
+    // Disable SPI peripheral to modify prescaler register safely
     LL_SPI_Disable(hspi->instance);
     
-    // Update prescaler register and handle structure
+    // Apply new baud rate divider
     LL_SPI_SetBaudRatePrescaler(hspi->instance, baudrate_div);
     hspi->baudrate_div = baudrate_div;
     
@@ -103,38 +102,37 @@ SPI_Status_t SPI_SetBaudrate(SPI_Handle_t *hspi, uint32_t baudrate_div)
 
 SPI_Status_t SPI_TransferByte(SPI_Handle_t *hspi, uint8_t tx_byte, uint8_t *rx_byte)
 {
-    // Validate pointer and initialization state
     if (hspi == NULL || !hspi->is_initialized) {
         return SPI_STATUS_ERROR;
     }
 
     uint32_t timeout = SPI_TIMEOUT_LOOPS;
 
-    // Wait until TX buffer is empty
+    // Wait until TX FIFO has room for a byte
     while (!LL_SPI_IsActiveFlag_TXE(hspi->instance)) {
         if (--timeout == 0) return SPI_STATUS_TIMEOUT;
     }
     
-    // Transmit byte
+    // Send byte to SPI TX register
     LL_SPI_TransmitData8(hspi->instance, tx_byte);
 
     timeout = SPI_TIMEOUT_LOOPS;
 
-    // Wait until RX buffer is not empty
+    // Wait until received byte arrives in RX FIFO
     while (!LL_SPI_IsActiveFlag_RXNE(hspi->instance)) {
         if (--timeout == 0) return SPI_STATUS_TIMEOUT;
     }
     
-    // Read received byte
+    // Read received data byte
     uint8_t received_data = LL_SPI_ReceiveData8(hspi->instance);
 
-    // Check and clear Overrun (OVR) error flag
+    // Clear Overrun error flag if it occurred
     if (LL_SPI_IsActiveFlag_OVR(hspi->instance)) {
         LL_SPI_ClearFlag_OVR(hspi->instance);
         return SPI_STATUS_ERROR;
     }
 
-    // Pass data back if pointer is provided
+    // Pass received byte back if output buffer is provided
     if (rx_byte != NULL) {
         *rx_byte = received_data;
     }
@@ -144,25 +142,23 @@ SPI_Status_t SPI_TransferByte(SPI_Handle_t *hspi, uint8_t tx_byte, uint8_t *rx_b
 
 SPI_Status_t SPI_ReceiveByte(SPI_Handle_t *hspi, uint8_t *rx_byte)
 {
-    // Send dummy byte (0xFF) to generate clock and receive data
+    // Send dummy byte (0xFF) to clock in one byte from slave
     return SPI_TransferByte(hspi, 0xFF, rx_byte);
 }
 
 SPI_Status_t SPI_TransmitBuffer(SPI_Handle_t *hspi, const uint8_t *tx_buffer, size_t length)
 {
-    // Validate pointers and length
     if (hspi == NULL || !hspi->is_initialized || tx_buffer == NULL || length == 0) {
         return SPI_STATUS_ERROR;
     }
 
     SPI_Status_t status;
 
-    // Transmit data byte by byte
+    // Stream byte sequence over SPI bus
     for (size_t i = 0; i < length; i++) {
-        // Pass NULL for rx_byte since we only care about transmitting
         status = SPI_TransferByte(hspi, tx_buffer[i], NULL);
         if (status != SPI_STATUS_OK) {
-            return status; // Abort on first hardware error or timeout
+            return status;
         }
     }
 
@@ -171,21 +167,48 @@ SPI_Status_t SPI_TransmitBuffer(SPI_Handle_t *hspi, const uint8_t *tx_buffer, si
 
 SPI_Status_t SPI_ReceiveBuffer(SPI_Handle_t *hspi, uint8_t *rx_buffer, size_t length)
 {
-    // Validate pointers and length
     if (hspi == NULL || !hspi->is_initialized || rx_buffer == NULL || length == 0) {
         return SPI_STATUS_ERROR;
     }
 
     SPI_Status_t status;
 
-    // Receive data byte by byte
+    // Read byte sequence into buffer by sending dummy clock pulses
     for (size_t i = 0; i < length; i++) {
         status = SPI_ReceiveByte(hspi, &rx_buffer[i]);
         if (status != SPI_STATUS_OK) {
-            return status; // Abort on first hardware error or timeout
+            return status;
         }
     }
 
     return SPI_STATUS_OK;
 }
-
+
+// Mutex protecting shared SPI1 bus between OLED and SD Card
+static SemaphoreHandle_t s_spi_mutex = NULL;
+
+void SPI_InitMutex(void)
+{
+    // Create FreeRTOS mutex for bus arbitration
+    if (s_spi_mutex == NULL) {
+        s_spi_mutex = xSemaphoreCreateMutex();
+    }
+}
+
+bool SPI_Lock(uint32_t timeout_ms)
+{
+    // Bypass locking if FreeRTOS scheduler is not active
+    if (xTaskGetSchedulerState() == taskSCHEDULER_NOT_STARTED || s_spi_mutex == NULL) {
+        return true;
+    }
+    return (xSemaphoreTake(s_spi_mutex, pdMS_TO_TICKS(timeout_ms)) == pdTRUE);
+}
+
+void SPI_Unlock(void)
+{
+    // Release bus mutex
+    if (xTaskGetSchedulerState() == taskSCHEDULER_NOT_STARTED || s_spi_mutex == NULL) {
+        return;
+    }
+    xSemaphoreGive(s_spi_mutex);
+}

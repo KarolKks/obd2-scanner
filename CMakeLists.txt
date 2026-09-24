@@ -167,8 +167,10 @@ target_link_options(${TARGET_ELF} PRIVATE
     ${CPU_FLAGS}
     -T${LINKER_SCRIPT}
     -Wl,--gc-sections
+    -Wl,-u,_printf_float
     --specs=nano.specs
     --specs=nosys.specs
+    -lm
     -Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.map,--cref
 )
 
