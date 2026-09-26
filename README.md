@@ -1,5 +1,11 @@
 # CAN OBD-II Diagnostic Scanner & Real-Time Data Logger
 
+[![Build & CI](https://github.com/KarolKks/obd2-scanner/actions/workflows/build.yml/badge.svg)](https://github.com/KarolKks/obd2-scanner/actions/workflows/build.yml)
+[![Target](https://img.shields.io/badge/Target-STM32L476RG-002B49?logo=stmicroelectronics)](https://www.st.com/en/microcontrollers-microprocessors/stm32l476rg.html)
+[![RTOS](https://img.shields.io/badge/RTOS-FreeRTOS-blue.svg)](https://www.freertos.org/)
+[![Language](https://img.shields.io/badge/Language-C11-blue.svg)](https://en.wikipedia.org/wiki/C11_(C_standard_revision))
+[![Build System](https://img.shields.io/badge/Build-CMake%20%7C%20Ninja-red.svg)](https://cmake.org/)
+
 An LL / RTOS diagnostic scanner and high-speed telemetry logger built for the **STM32L476RG (ARM Cortex-M4 80 MHz)** microcontroller. 
 
 The system implements the physical and network layers of **ISO 11898-2 (High-Speed CAN 500 kbps)**, the transport layer **ISO 15765-2 (ISO-TP)** with multi-frame flow control reassembly, and the application diagnostics layer **SAE J1979 / ISO 15765-4 (OBD-II)**. It features an interactive **1.3" SH1106 OLED** graphical menu driven by a **hardware quadrature rotary encoder (TIM3)**, asynchronous event-based UART alerting, and high-reliability CSV blackbox logging to **MicroSD (FatFs)** over a mutex-arbitrated SPI bus.
