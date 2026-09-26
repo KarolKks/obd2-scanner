@@ -1,0 +1,46 @@
+name: Build & CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Firmware (ARM GCC)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      - name: Setup ARM GNU Toolchain
+        uses: arm-software/setup-arm-toolchain@v1
+        with:
+          arm-version: '13.2.Rel1'
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build Firmware
+        run: |
+          cmake --build build --config Release
+
+      - name: Upload Firmware Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: stm32-firmware-binaries
+          path: |
+            build/can-data-logger.bin
+            build/can-data-logger.hex
+            build/can-data-logger.elf
+            build/can-data-logger.map
+          retention-days: 14
