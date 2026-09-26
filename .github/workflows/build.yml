@@ -22,9 +22,9 @@ jobs:
           sudo apt-get install -y ninja-build
 
       - name: Setup ARM GNU Toolchain
-        uses: arm-software/setup-arm-toolchain@v1
+        uses: carlosperate/arm-none-eabi-gcc-action@v1
         with:
-          arm-version: '13.2.Rel1'
+          release: '13.2.Rel1'
 
       - name: Configure CMake
         run: |
