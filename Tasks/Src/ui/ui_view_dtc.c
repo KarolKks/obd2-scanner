@@ -147,7 +147,7 @@ static void View_DTCs_Render(const VehicleData_t *data)
         SH1106_DrawString(122, 42, "v", &Font_6x8, SH1106_COLOR_WHITE);
     }
 
-    UI_RenderFooter("Rotate:Scroll Hold:Back");
+    UI_RenderFooter("Rot:Scroll Hold:Back");
 }
 
 static void View_DTCs_OnEvent(KY040_Event_t event, const VehicleData_t *data)
@@ -227,7 +227,7 @@ static void View_ClearDTC_Render(const VehicleData_t *data)
         SH1106_DrawString(2, 40, "Press YES to confirm", &Font_6x8, SH1106_COLOR_WHITE);
     }
 
-    UI_RenderFooter("Rotate:Select Click:Exec");
+    UI_RenderFooter("Rotate:Nav Click:Exec");
 }
 
 static void View_ClearDTC_OnEvent(KY040_Event_t event, const VehicleData_t *data)

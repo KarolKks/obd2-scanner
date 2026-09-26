@@ -59,7 +59,7 @@ static void View_LiveList_Render(const VehicleData_t *data)
         SH1106_DrawString(122, 42, "v", &Font_6x8, SH1106_COLOR_WHITE);
     }
 
-    UI_RenderFooter("Rotate:Scroll Hold:Back");
+    UI_RenderFooter("Rot:Scroll Hold:Back");
 }
 
 static void View_LiveList_OnEvent(KY040_Event_t event, const VehicleData_t *data)

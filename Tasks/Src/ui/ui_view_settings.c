@@ -13,9 +13,9 @@ static const char *View_SDInterval_GetFooter(void)
 {
     uint16_t act = Task_Logger_GetIntervalSeconds();
     if (act == 0) {
-        snprintf(s_sd_footer_buf, sizeof(s_sd_footer_buf), "SD: DISABLED Click:OK");
+        snprintf(s_sd_footer_buf, sizeof(s_sd_footer_buf), "SD: OFF     Click:OK");
     } else {
-        snprintf(s_sd_footer_buf, sizeof(s_sd_footer_buf), "SD: every %us Click:OK", (unsigned int)act);
+        snprintf(s_sd_footer_buf, sizeof(s_sd_footer_buf), "SD: %2us    Click:OK", (unsigned int)act);
     }
     return s_sd_footer_buf;
 }
@@ -51,7 +51,7 @@ static void View_SDInterval_Render(const VehicleData_t *data)
         SH1106_DrawString(6, 44, "SD Card: [NO CARD!]", &Font_6x8, SH1106_COLOR_WHITE);
     }
 
-    UI_RenderFooter("Rotate:+/- Click:Confirm");
+    UI_RenderFooter("Rotate:+/-  Click:OK");
 }
 
 static void View_SDInterval_OnEvent(KY040_Event_t event, const VehicleData_t *data)
@@ -130,7 +130,7 @@ static const char *View_SDChannels_GetFooter(void)
     if (s_active_pids_count == 0) {
         return "Hold: Back to menu";
     }
-    snprintf(s_chan_footer_buf, sizeof(s_chan_footer_buf), "Channels: %02u/%02u Click",
+    snprintf(s_chan_footer_buf, sizeof(s_chan_footer_buf), "Ch: %02u/%02u   Click:OK",
              (unsigned int)View_SDChannels_GetActiveSelectedCount(), (unsigned int)s_active_pids_count);
     return s_chan_footer_buf;
 }
@@ -192,7 +192,7 @@ static void View_SDChannels_Render(const VehicleData_t *data)
         SH1106_DrawString(122, 42, "v", &Font_6x8, SH1106_COLOR_WHITE);
     }
 
-    UI_RenderFooter("Rotate:Move Click:Toggle");
+    UI_RenderFooter("Rotate:Nav Click:Tgl");
 }
 
 static void View_SDChannels_OnEvent(KY040_Event_t event, const VehicleData_t *data)
@@ -426,9 +426,9 @@ static void View_SetDateTime_Render(const VehicleData_t *data)
     }
 
     if (s_time_edit_active) {
-        UI_RenderFooter("Rotate:Adj  Click:Set");
+        UI_RenderFooter("Rotate:Adj Click:Set");
     } else {
-        UI_RenderFooter("Rotate:Nav  Click:Sel");
+        UI_RenderFooter("Rotate:Nav Click:Sel");
     }
 }
 

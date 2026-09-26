@@ -18,18 +18,28 @@ void UI_ExitToMenu(void)
     OBD2_SetMode06Active(false);
 }
 
-// Standardized header bar: title string at top with separator line
+// Standardized header bar: title string at top with separator line (centered)
 void UI_RenderHeader(const char *title)
 {
-    SH1106_DrawString(2, 2, title, &Font_6x8, SH1106_COLOR_WHITE);
+    if (title != NULL) {
+        size_t len = strlen(title);
+        int16_t x = (int16_t)((128 - (int16_t)(len * 6)) / 2);
+        if (x < 1) x = 1;
+        SH1106_DrawString(x, 2, title, &Font_6x8, SH1106_COLOR_WHITE);
+    }
     SH1106_DrawLine(0, 10, 127, 10, SH1106_COLOR_WHITE);
 }
 
-// Standardized footer bar: separator line with contextual navigation hints
+// Standardized footer bar: separator line with contextual navigation hints (centered)
 void UI_RenderFooter(const char *text)
 {
     SH1106_DrawLine(0, 52, 127, 52, SH1106_COLOR_WHITE);
-    SH1106_DrawString(2, 54, text, &Font_6x8, SH1106_COLOR_WHITE);
+    if (text != NULL) {
+        size_t len = strlen(text);
+        int16_t x = (int16_t)((128 - (int16_t)(len * 6)) / 2);
+        if (x < 1) x = 1;
+        SH1106_DrawString(x, 54, text, &Font_6x8, SH1106_COLOR_WHITE);
+    }
 }
 
 // Animated startup splash screen with progressive loading bar
@@ -73,7 +83,7 @@ static const UI_Screen_t * const s_screens[] = {
 // Renders the main scrollable diagnostic menu on the OLED display
 static void Task_UI_RenderMainMenu(void)
 {
-    UI_RenderHeader("[ MAIN DIAGNOSTIC MENU ]");
+    UI_RenderHeader("[ DIAGNOSTIC MENU ]");
 
     // Render 4 visible menu items inside current scroll window
     for (uint8_t row = 0; row < 4; row++) {
@@ -106,7 +116,7 @@ static void Task_UI_RenderMainMenu(void)
     if (footer != NULL) {
         UI_RenderFooter(footer);
     } else {
-        UI_RenderFooter("Rotate:Select Click:OK");
+        UI_RenderFooter("Rotate:Nav  Click:OK");
     }
 }
 
