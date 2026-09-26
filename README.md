@@ -428,3 +428,4 @@ If you prefer official ST development tools:
 - **STM32CubeIDE**: Import the project as an existing CMake / Makefile project, create a Run/Debug configuration targeting the ST-Link GDB server, and click **Run**.
 
 ---
+<img width="1218" height="731" alt="image" src="https://github.com/user-attachments/assets/c375ad59-9dca-4e11-8b0e-c8c12781df26" />
