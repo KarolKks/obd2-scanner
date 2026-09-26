@@ -18,7 +18,7 @@ static void View_FreezeFrame_Render(const VehicleData_t *data)
         SH1106_DrawString(2, 38, buf, &Font_6x8, SH1106_COLOR_WHITE);
     } else {
         SH1106_DrawString(14, 20, "Freeze Frame:", &Font_6x8, SH1106_COLOR_WHITE);
-        SH1106_DrawString(14, 34, "Not available in ECU", &Font_6x8, SH1106_COLOR_WHITE);
+        SH1106_DrawString(4, 34, "No response from ECU", &Font_6x8, SH1106_COLOR_WHITE);
     }
 
     UI_RenderFooter("Hold: Back to menu");
@@ -70,14 +70,14 @@ static void View_VehicleInfo_OnEvent(KY040_Event_t event, const VehicleData_t *d
 }
 
 const UI_Screen_t g_screen_vehicle_info = {
-    .label      = "5. VEHICLE INFO VIN",
+    .label      = "6. VEHICLE INFO VIN",
     .on_enter   = NULL,
     .render     = View_VehicleInfo_Render,
     .on_event   = View_VehicleInfo_OnEvent,
     .get_footer = NULL
 };
 
-// View 6: Protocol & Module Information
+// View 7: Protocol & Module Information
 static void View_ProtocolInfo_Render(const VehicleData_t *data)
 {
     (void)data;
@@ -102,7 +102,7 @@ static void View_ProtocolInfo_OnEvent(KY040_Event_t event, const VehicleData_t *
 }
 
 const UI_Screen_t g_screen_protocol_info = {
-    .label      = "6. PROTOCOL & MODULE",
+    .label      = "7. PROTOCOL & MODULE",
     .on_enter   = NULL,
     .render     = View_ProtocolInfo_Render,
     .on_event   = View_ProtocolInfo_OnEvent,

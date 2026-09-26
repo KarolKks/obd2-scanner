@@ -662,3 +662,163 @@ const char *OBD2_GetDTCDescription(uint16_t dtc)
         default: return "Diagnostic Fault";
     }
 }
+
+static volatile bool s_mode06_active = false;
+
+void OBD2_SetMode06Active(bool active)
+{
+    s_mode06_active = active;
+}
+
+bool OBD2_IsMode06Active(void)
+{
+    return s_mode06_active;
+}
+
+const char *OBD2_GetMIDName(uint8_t mid)
+{
+    switch (mid) {
+        case 0x01: return "O2 B1S1 Rich/Lean";
+        case 0x02: return "O2 B1S2 Lean/Rich";
+        case 0x05: return "O2 B2S1 Rich/Lean";
+        case 0x06: return "O2 B2S2 Lean/Rich";
+        case 0x21: return "Catalyst Mon B1";
+        case 0x22: return "Catalyst Mon B2";
+        case 0x31: return "EGR / VVT Mon";
+        case 0x35: return "VVT Monitor";
+        case 0x39: return "EVAP Vapor Pres";
+        case 0x3A: return "EVAP 0.040 Leak";
+        case 0x3B: return "EVAP 0.020 Leak";
+        case 0x41: return "Secondary Air";
+        case 0xA1: return "Misfire General";
+        case 0xA2: return "Misfire Cyl 1";
+        case 0xA3: return "Misfire Cyl 2";
+        case 0xA4: return "Misfire Cyl 3";
+        case 0xA5: return "Misfire Cyl 4";
+        case 0xA6: return "Misfire Cyl 5";
+        case 0xA7: return "Misfire Cyl 6";
+        default:   return "Component Test";
+    }
+}
+
+static uint8_t OBD2_ParseMode06Records(const uint8_t *payload, uint16_t len, OBD2_Mode06Item_t *out_items, uint8_t max_items)
+{
+    uint8_t count = 0;
+    uint16_t idx = 0;
+
+    // Standard CAN OBD-II Mode 06 records are 9 bytes each:
+    // [OBDMID] [TID] [UASID] [Val_MSB] [Val_LSB] [Min_MSB] [Min_LSB] [Max_MSB] [Max_LSB]
+    while ((idx + 9) <= len && count < max_items) {
+        out_items[count].obdmid    = payload[idx];
+        out_items[count].tid       = payload[idx + 1];
+        // payload[idx + 2] is UASID
+        out_items[count].value     = (uint16_t)((payload[idx + 3] << 8) | payload[idx + 4]);
+        out_items[count].min_limit = (uint16_t)((payload[idx + 5] << 8) | payload[idx + 6]);
+        out_items[count].max_limit = (uint16_t)((payload[idx + 7] << 8) | payload[idx + 8]);
+
+        // Standard evaluation:
+        // If min == 0xFFFF, no lower limit
+        // If max == 0xFFFF, no upper limit
+        bool pass = true;
+        if (out_items[count].min_limit != 0xFFFF && out_items[count].value < out_items[count].min_limit) {
+            pass = false;
+        }
+        if (out_items[count].max_limit != 0xFFFF && out_items[count].value > out_items[count].max_limit) {
+            pass = false;
+        }
+        out_items[count].passed = pass;
+        out_items[count].name   = OBD2_GetMIDName(out_items[count].obdmid);
+
+        count++;
+        idx += 9;
+    }
+    return count;
+}
+
+static bool OBD2_QuerySingleMID(uint8_t mid, OBD2_Mode06Item_t *out_items, uint8_t max_items, uint8_t *out_count, uint32_t timeout_ms)
+{
+    if (out_items == NULL || out_count == NULL || max_items == 0) return false;
+
+    CAN_Frame_t tx_frame;
+    CAN_Frame_t rx_frame;
+    OBD_MF_RxContext_t iso_tp_ctx;
+
+    CAN_FlushRxQueue();
+    OBD_MF_Reset(&iso_tp_ctx);
+    OBD2_BuildRequest(OBD2_SERVICE_06_ONBOARD_TEST, mid, &tx_frame);
+    if (CAN_Transmit(&tx_frame, 50) != CAN_OK) {
+        return false;
+    }
+
+    TickType_t start_time = xTaskGetTickCount();
+    while ((xTaskGetTickCount() - start_time) < pdMS_TO_TICKS(timeout_ms)) {
+        if (CAN_Receive(&rx_frame, 50) == CAN_OK) {
+            uint8_t frame_type = rx_frame.data[0] >> 4;
+            if (frame_type == 0) {
+                // ISO-TP Single Frame
+                if (rx_frame.data[1] == (OBD2_SERVICE_06_ONBOARD_TEST + 0x40)) {
+                    uint8_t payload_len = rx_frame.data[0] & 0x0F;
+                    if (payload_len >= 1) {
+                        *out_count = OBD2_ParseMode06Records(&rx_frame.data[2], payload_len - 1, out_items, max_items);
+                        return true;
+                    }
+                }
+            } else {
+                // ISO-TP Multi-Frame
+                OBD_MF_ProcessFrame(&iso_tp_ctx, &rx_frame);
+                if (iso_tp_ctx.state == OBD_MF_STATE_COMPLETE) {
+                    if (iso_tp_ctx.buffer[0] == (OBD2_SERVICE_06_ONBOARD_TEST + 0x40)) {
+                        *out_count = OBD2_ParseMode06Records(&iso_tp_ctx.buffer[1], iso_tp_ctx.total_length - 1, out_items, max_items);
+                        return true;
+                    }
+                } else if (iso_tp_ctx.state == OBD_MF_STATE_ERROR) {
+                    return false;
+                }
+            }
+        } else {
+            break;
+        }
+    }
+    return false;
+}
+
+bool OBD2_QueryMode06(OBD2_Mode06Data_t *out_data, uint32_t timeout_ms)
+{
+    if (out_data == NULL) return false;
+
+    // 1. Initial quick probe with OBDMID 0x00 to verify if ECU supports Mode 06
+    uint8_t nrc = 0;
+    OBD2_ResponseStatus_t status = OBD2_ProbeService(OBD2_SERVICE_06_ONBOARD_TEST, 0x00, 0, 1, &nrc, 150);
+    if (status != OBD2_RESP_OK) {
+        out_data->no_response = true;
+        out_data->valid = false;
+        out_data->count = 0;
+        return false;
+    }
+
+    out_data->no_response = false;
+    out_data->count = 0;
+
+    // Target common monitor MIDs to query
+    static const uint8_t target_mids[] = {
+        0x01, 0x02, // O2 Bank 1
+        0x21,       // Catalyst Bank 1
+        0x31,       // EGR / VVT
+        0x39,       // EVAP
+        0xA2, 0xA3, 0xA4, 0xA5 // Misfire Cyl 1..4
+    };
+    uint8_t target_count = sizeof(target_mids) / sizeof(target_mids[0]);
+    uint32_t per_mid_timeout = (target_count > 0) ? (timeout_ms / target_count) : 50;
+    if (per_mid_timeout < 40) per_mid_timeout = 40;
+
+    for (uint8_t i = 0; i < target_count && out_data->count < OBD2_MAX_MODE06_ITEMS; i++) {
+        uint8_t remaining = OBD2_MAX_MODE06_ITEMS - out_data->count;
+        uint8_t added = 0;
+        if (OBD2_QuerySingleMID(target_mids[i], &out_data->items[out_data->count], remaining, &added, per_mid_timeout)) {
+            out_data->count += added;
+        }
+    }
+
+    out_data->valid = true;
+    return true;
+}

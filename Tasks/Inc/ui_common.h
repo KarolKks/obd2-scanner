@@ -54,7 +54,10 @@ extern const UI_Screen_t g_screen_clear_dtc;
 // View 4: Freeze Frame Snapshot (Service 02)
 extern const UI_Screen_t g_screen_freeze_frame;
 
-// View 5: Vehicle Identification (Service 09 VIN)
+// View 5: On-Board Monitoring Tests (Service 06)
+extern const UI_Screen_t g_screen_mode06;
+
+// View 6: Vehicle Identification (Service 09 VIN)
 extern const UI_Screen_t g_screen_vehicle_info;
 
 // View 6: Protocol & Module Information

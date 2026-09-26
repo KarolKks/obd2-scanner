@@ -259,6 +259,31 @@ bool OBD2_QueryVIN(char *out_vin, uint32_t timeout_ms);
  */
 OBD2_ResponseStatus_t OBD2_ProbeService(uint8_t service, uint8_t param1, uint8_t param2, uint8_t param_len, uint8_t *nrc_code, uint32_t timeout_ms);
 
+#define OBD2_MAX_MODE06_ITEMS           16U
+
+/**
+ * @brief Individual test record decoded from Service 06 On-Board Monitoring.
+ */
+typedef struct {
+    uint8_t     obdmid;
+    uint8_t     tid;
+    uint16_t    value;
+    uint16_t    min_limit;
+    uint16_t    max_limit;
+    bool        passed;
+    const char *name;
+} OBD2_Mode06Item_t;
+
+/**
+ * @brief Aggregated Service 06 snapshot data.
+ */
+typedef struct {
+    OBD2_Mode06Item_t items[OBD2_MAX_MODE06_ITEMS];
+    uint8_t           count;
+    bool              valid;
+    bool              no_response;
+} OBD2_Mode06Data_t;
+
 typedef struct {
     char     datetime[24];
     
@@ -290,6 +315,9 @@ typedef struct {
     // Service 01: Dynamic Live Telemetry Array
     OBD2_LiveParam_t live_params[OBD2_MAX_ACTIVE_PIDS];
     uint8_t          live_params_count;
+
+    // Service 06: On-Board Monitoring Test Results
+    OBD2_Mode06Data_t mode06_data;
 } VehicleData_t;
 
 /**
@@ -342,5 +370,31 @@ void OBD2_SetClearDTCStatus(int8_t status);
  * @return Null-terminated description string.
  */
 const char *OBD2_GetDTCDescription(uint16_t dtc);
+
+/**
+ * @brief Informs OBD2 task whether Mode 06 view is actively open in UI.
+ * @param active true when Mode 06 screen is displayed, false when exited.
+ */
+void OBD2_SetMode06Active(bool active);
+
+/**
+ * @brief Returns true if Mode 06 is active.
+ */
+bool OBD2_IsMode06Active(void);
+
+/**
+ * @brief Queries Service 06 On-Board Monitoring test results via ISO-TP.
+ * @param out_data Pointer to OBD2_Mode06Data_t to populate.
+ * @param timeout_ms Timeout in ms for multi-frame transfer.
+ * @return true if response received and parsed, false if no response / timeout.
+ */
+bool OBD2_QueryMode06(OBD2_Mode06Data_t *out_data, uint32_t timeout_ms);
+
+/**
+ * @brief Returns human-readable name for a standard OBDMID (Service 06 monitor).
+ * @param mid OBDMID identifier (e.g. 0x01, 0x21, 0xA2).
+ * @return Short description string.
+ */
+const char *OBD2_GetMIDName(uint8_t mid);
 
 #endif /* CORE_OBD2_H */

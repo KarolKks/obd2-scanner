@@ -162,6 +162,18 @@ static void Task_OBD2_Body(void *argument)
     // Run initial all-services diagnostic scan to discover supported modes
     Task_OBD2_RunServicesScan();
 
+    // Default logging mask to only the discovered supported PIDs (avoid empty columns)
+    uint32_t discovered_mask = 0;
+    for (uint8_t i = 0; i < OBD2_SUPPORTED_PID_COUNT; i++) {
+        const OBD2_PIDDescriptor_t *desc = OBD2_GetDescriptorByIndex(i);
+        if (desc != NULL && OBD2_IsPIDQueryable(desc->pid)) {
+            discovered_mask |= (1UL << i);
+        }
+    }
+    if (discovered_mask != 0) {
+        Task_Logger_SetChannelsMask(discovered_mask);
+    }
+
     while (1)
     {
         // Timestamp from RTC or monotonic clock fallback
@@ -223,17 +235,23 @@ static void Task_OBD2_Body(void *argument)
                              (unsigned long)(sec / 3600), (unsigned long)((sec % 3600) / 60), (unsigned long)(sec % 60));
                 }
 
-                snap.channel_mask = Task_Logger_GetChannelsMask();
+                uint32_t effective_channel_mask = 0;
                 snap.param_count = OBD2_SUPPORTED_PID_COUNT;
 
-                // Populate telemetry snapshot parameters according to channel settings
+                // Populate telemetry snapshot parameters according to channel settings and ECU capabilities
                 for (uint8_t i = 0; i < OBD2_SUPPORTED_PID_COUNT; i++) {
                     const OBD2_PIDDescriptor_t *desc = OBD2_GetDescriptorByIndex(i);
                     if (desc != NULL) {
                         snap.params[i].pid = desc->pid;
                         strncpy(snap.params[i].short_name, desc->short_name, sizeof(snap.params[i].short_name) - 1);
                         snap.params[i].decimals = desc->decimals;
-                        snap.params[i].enabled = Task_Logger_IsChannelEnabled(i);
+
+                        // Enabled only if selected by user AND actually supported by vehicle ECU
+                        bool is_en = Task_Logger_IsChannelEnabled(i) && OBD2_IsPIDQueryable(desc->pid);
+                        snap.params[i].enabled = is_en;
+                        if (is_en) {
+                            effective_channel_mask |= (1UL << i);
+                        }
 
                         bool found = false;
                         for (uint8_t p = 0; p < vdata.live_params_count; p++) {
@@ -250,6 +268,7 @@ static void Task_OBD2_Body(void *argument)
                         }
                     }
                 }
+                snap.channel_mask = effective_channel_mask;
 
                 // Send snapshot to background SD card writer queue
                 if (!Task_Logger_EnqueueSnapshot(&snap)) {
@@ -285,6 +304,13 @@ static void Task_OBD2_Body(void *argument)
             if (vdata.freeze_valid) {
                 OBD2_QueryFreezeFrame(OBD2_PID_VEHICLE_SPEED, 0, &vdata.freeze_speed);
                 OBD2_QueryFreezeFrame(OBD2_PID_COOLANT_TEMP, 0, &vdata.freeze_coolant);
+            }
+        }
+
+        // Service 06: Background refresh when Mode 06 view is open in UI (every 4 cycles = ~2s)
+        if (OBD2_IsMode06Active()) {
+            if ((cycle_counter % 4) == 0) {
+                OBD2_QueryMode06(&vdata.mode06_data, 400);
             }
         }
 

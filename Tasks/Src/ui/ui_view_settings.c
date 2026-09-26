@@ -86,7 +86,7 @@ static void View_SDInterval_OnEvent(KY040_Event_t event, const VehicleData_t *da
 }
 
 const UI_Screen_t g_screen_sd_interval = {
-    .label      = "7. SD LOG INTERVAL",
+    .label      = "8. SD LOG INTERVAL",
     .on_enter   = View_SDInterval_OnEnter,
     .render     = View_SDInterval_Render,
     .on_event   = View_SDInterval_OnEvent,
@@ -94,46 +94,77 @@ const UI_Screen_t g_screen_sd_interval = {
 };
 
 // View 8: SD Card Channel Selection
-static int8_t s_channel_cursor = 0;  // 0 = ALL CHANNELS toggle, 1..20 = individual PID channels
+static int8_t s_channel_cursor = 0;  // 0 = ALL CHANNELS toggle, 1..active_count = individual PID channels
 static int8_t s_channel_scroll = 0;  // Viewport scroll offset
 static char s_chan_footer_buf[32];
+static uint8_t s_active_pids_idx[OBD2_SUPPORTED_PID_COUNT];
+static uint8_t s_active_pids_count = 0;
+
+static uint8_t View_SDChannels_GetActiveSelectedCount(void)
+{
+    uint8_t count = 0;
+    for (uint8_t k = 0; k < s_active_pids_count; k++) {
+        if (Task_Logger_IsChannelEnabled(s_active_pids_idx[k])) {
+            count++;
+        }
+    }
+    return count;
+}
 
 static void View_SDChannels_OnEnter(void)
 {
     s_channel_cursor = 0;
     s_channel_scroll = 0;
+    s_active_pids_count = 0;
+
+    for (uint8_t i = 0; i < OBD2_SUPPORTED_PID_COUNT; i++) {
+        const OBD2_PIDDescriptor_t *desc = OBD2_GetDescriptorByIndex(i);
+        if (desc != NULL && OBD2_IsPIDQueryable(desc->pid)) {
+            s_active_pids_idx[s_active_pids_count++] = i;
+        }
+    }
 }
 
 static const char *View_SDChannels_GetFooter(void)
 {
-    snprintf(s_chan_footer_buf, sizeof(s_chan_footer_buf), "Channels: %02u/20 Click",
-             (unsigned int)Task_Logger_GetSelectedCount());
+    if (s_active_pids_count == 0) {
+        return "Hold: Back to menu";
+    }
+    snprintf(s_chan_footer_buf, sizeof(s_chan_footer_buf), "Channels: %02u/%02u Click",
+             (unsigned int)View_SDChannels_GetActiveSelectedCount(), (unsigned int)s_active_pids_count);
     return s_chan_footer_buf;
 }
 
 static void View_SDChannels_Render(const VehicleData_t *data)
 {
     (void)data;
+    uint8_t sel_count = View_SDChannels_GetActiveSelectedCount();
     char buf[32];
-    uint8_t sel_count = Task_Logger_GetSelectedCount();
-    snprintf(buf, sizeof(buf), "[ CHANNELS (%02u/20) ]", (unsigned int)sel_count);
+    snprintf(buf, sizeof(buf), "[ CHANNELS (%02u/%02u) ]", (unsigned int)sel_count, (unsigned int)s_active_pids_count);
     UI_RenderHeader(buf);
+
+    if (s_active_pids_count == 0) {
+        SH1106_DrawString(4, 22, "No sensors discovered.", &Font_6x8, SH1106_COLOR_WHITE);
+        SH1106_DrawString(4, 34, "Waiting for CAN...", &Font_6x8, SH1106_COLOR_WHITE);
+        UI_RenderFooter("Hold: Back to menu");
+        return;
+    }
 
     // 4-row viewport rendering
     for (uint8_t row = 0; row < 4; row++) {
         int8_t item_idx = s_channel_scroll + row;
-        if (item_idx > 20) break;
+        if (item_idx > s_active_pids_count) break;
 
         int16_t y = 12 + (row * 10);
         char row_str[24];
 
         if (item_idx == 0) {
-            // Master toggle for all 20 logging channels
-            bool all_sel = (sel_count == 20);
+            // Master toggle for all discovered channels
+            bool all_sel = (sel_count == s_active_pids_count);
             snprintf(row_str, sizeof(row_str), "%s ALL CHANNELS", all_sel ? "[*]" : "[ ]");
         } else {
             // Individual sensor channel toggle
-            uint8_t ch = (uint8_t)(item_idx - 1);
+            uint8_t ch = s_active_pids_idx[item_idx - 1];
             const OBD2_PIDDescriptor_t *desc = OBD2_GetDescriptorByIndex(ch);
             bool is_sel = Task_Logger_IsChannelEnabled(ch);
             if (desc != NULL) {
@@ -157,7 +188,7 @@ static void View_SDChannels_Render(const VehicleData_t *data)
     if (s_channel_scroll > 0) {
         SH1106_DrawString(122, 12, "^", &Font_6x8, SH1106_COLOR_WHITE);
     }
-    if ((s_channel_scroll + 4) <= 20) {
+    if ((s_channel_scroll + 4) <= s_active_pids_count) {
         SH1106_DrawString(122, 42, "v", &Font_6x8, SH1106_COLOR_WHITE);
     }
 
@@ -167,10 +198,17 @@ static void View_SDChannels_Render(const VehicleData_t *data)
 static void View_SDChannels_OnEvent(KY040_Event_t event, const VehicleData_t *data)
 {
     (void)data;
+    if (s_active_pids_count == 0) {
+        if (event == KY040_EVENT_HOLD || event == KY040_EVENT_CLICK) {
+            UI_ExitToMenu();
+        }
+        return;
+    }
+
     switch (event) {
         case KY040_EVENT_CW:
             // Move cursor down and scroll viewport if needed
-            if (s_channel_cursor < 20) {
+            if (s_channel_cursor < s_active_pids_count) {
                 s_channel_cursor++;
                 if (s_channel_cursor >= (s_channel_scroll + 4)) {
                     s_channel_scroll = s_channel_cursor - 3;
@@ -187,12 +225,24 @@ static void View_SDChannels_OnEvent(KY040_Event_t event, const VehicleData_t *da
             }
             break;
         case KY040_EVENT_CLICK:
-            // Click toggles all channels (row 0) or single channel (rows 1..20)
+            // Click toggles all active channels (row 0) or single active channel (rows 1..active_count)
             if (s_channel_cursor == 0) {
-                bool all_sel = (Task_Logger_GetSelectedCount() == 20);
-                Task_Logger_SelectAllChannels(!all_sel);
+                bool all_sel = (View_SDChannels_GetActiveSelectedCount() == s_active_pids_count);
+                for (uint8_t k = 0; k < s_active_pids_count; k++) {
+                    uint8_t ch = s_active_pids_idx[k];
+                    if (all_sel) {
+                        if (Task_Logger_IsChannelEnabled(ch)) {
+                            Task_Logger_ToggleChannel(ch);
+                        }
+                    } else {
+                        if (!Task_Logger_IsChannelEnabled(ch)) {
+                            Task_Logger_ToggleChannel(ch);
+                        }
+                    }
+                }
             } else {
-                Task_Logger_ToggleChannel((uint8_t)(s_channel_cursor - 1));
+                uint8_t ch = s_active_pids_idx[s_channel_cursor - 1];
+                Task_Logger_ToggleChannel(ch);
             }
             break;
         case KY040_EVENT_HOLD:
@@ -204,7 +254,7 @@ static void View_SDChannels_OnEvent(KY040_Event_t event, const VehicleData_t *da
 }
 
 const UI_Screen_t g_screen_sd_channels = {
-    .label      = "8. SD LOG CHANNELS",
+    .label      = "9. SD LOG CHANNELS",
     .on_enter   = View_SDChannels_OnEnter,
     .render     = View_SDChannels_Render,
     .on_event   = View_SDChannels_OnEvent,
@@ -464,7 +514,7 @@ static void View_SetDateTime_OnEvent(KY040_Event_t event, const VehicleData_t *d
 }
 
 const UI_Screen_t g_screen_set_datetime = {
-    .label      = "9. SET DATE & TIME",
+    .label      = "10. SET DATE & TIME",
     .on_enter   = View_SetDateTime_OnEnter,
     .render     = View_SetDateTime_Render,
     .on_event   = View_SetDateTime_OnEvent,

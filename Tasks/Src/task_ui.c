@@ -15,6 +15,7 @@ static int8_t        s_menu_scroll = 0;         // Viewport vertical scroll offs
 void UI_ExitToMenu(void)
 {
     s_ui_mode = UI_MODE_MENU;
+    OBD2_SetMode06Active(false);
 }
 
 // Standardized header bar: title string at top with separator line
@@ -59,6 +60,7 @@ static const UI_Screen_t * const s_screens[] = {
     &g_screen_dtc,
     &g_screen_clear_dtc,
     &g_screen_freeze_frame,
+    &g_screen_mode06,
     &g_screen_vehicle_info,
     &g_screen_protocol_info,
     &g_screen_sd_interval,
